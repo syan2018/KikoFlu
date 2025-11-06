@@ -8,7 +8,8 @@ import 'auth_provider.dart';
 // Display mode - 展示模式
 enum DisplayMode {
   all('all', '全部作品'),
-  popular('popular', '热门推荐');
+  popular('popular', '热门推荐'),
+  recommended('recommended', '推荐');
 
   const DisplayMode(this.value, this.label);
   final String value;
@@ -57,6 +58,8 @@ class WorksState extends Equatable {
   final SortDirection sortDirection;
   final DisplayMode displayMode;
   final int subtitleFilter; // 0: 全部, 1: 仅带字幕
+  final int pageSize; // 每页数量
+  final bool isLastPage; // 是否是最后一页(用于热门/推荐的100条限制提示)
 
   const WorksState({
     this.works = const [],
@@ -70,6 +73,8 @@ class WorksState extends Equatable {
     this.sortDirection = SortDirection.desc,
     this.displayMode = DisplayMode.all, // 默认显示全部作品
     this.subtitleFilter = 0, // 默认显示全部
+    this.pageSize = 30, // 全部模式每页30条
+    this.isLastPage = false,
   });
 
   WorksState copyWith({
@@ -84,6 +89,8 @@ class WorksState extends Equatable {
     SortDirection? sortDirection,
     DisplayMode? displayMode,
     int? subtitleFilter,
+    int? pageSize,
+    bool? isLastPage,
   }) {
     return WorksState(
       works: works ?? this.works,
@@ -97,6 +104,8 @@ class WorksState extends Equatable {
       sortDirection: sortDirection ?? this.sortDirection,
       displayMode: displayMode ?? this.displayMode,
       subtitleFilter: subtitleFilter ?? this.subtitleFilter,
+      pageSize: pageSize ?? this.pageSize,
+      isLastPage: isLastPage ?? this.isLastPage,
     );
   }
 
@@ -113,19 +122,26 @@ class WorksState extends Equatable {
         sortDirection,
         displayMode,
         subtitleFilter,
+        pageSize,
+        isLastPage,
       ];
 }
 
 // Works notifier
 class WorksNotifier extends StateNotifier<WorksState> {
   final KikoeruApiService _apiService;
+  final Ref _ref;
 
-  WorksNotifier(this._apiService) : super(const WorksState());
+  WorksNotifier(this._apiService, this._ref) : super(const WorksState());
 
-  Future<void> loadWorks({bool refresh = false}) async {
+  Future<void> loadWorks({bool refresh = false, int? targetPage}) async {
     if (state.isLoading) return;
 
-    final page = refresh ? 1 : state.currentPage;
+    // 全部模式使用分页,热门/推荐使用滚动加载
+    final isAllMode = state.displayMode == DisplayMode.all;
+    final page = isAllMode
+        ? (targetPage ?? (refresh ? 1 : state.currentPage))
+        : (refresh ? 1 : state.currentPage);
 
     state = state.copyWith(
       isLoading: true,
@@ -135,19 +151,33 @@ class WorksNotifier extends StateNotifier<WorksState> {
     try {
       Map<String, dynamic> response;
 
+      // 根据显示模式设置每页数量
+      final pageSize = isAllMode ? 30 : 20;
+
       // 根据显示模式选择不同的API
       if (state.displayMode == DisplayMode.popular) {
         response = await _apiService.getPopularWorks(
           page: page,
-          pageSize: 20,
-          subtitle: state.subtitleFilter, // 热门推荐也支持字幕筛选
+          pageSize: pageSize,
+          subtitle: state.subtitleFilter,
+        );
+      } else if (state.displayMode == DisplayMode.recommended) {
+        final currentUser = _ref.read(authProvider).currentUser;
+        final recommenderUuid = currentUser?.recommenderUuid ??
+            '766cc58d-7f1e-4958-9a93-913400f378dc';
+
+        response = await _apiService.getRecommendedWorks(
+          recommenderUuid: recommenderUuid,
+          page: page,
+          pageSize: pageSize,
+          subtitle: state.subtitleFilter,
         );
       } else {
         response = await _apiService.getWorks(
           page: page,
           order: state.sortOption.value,
           sort: state.sortDirection.value,
-          subtitle: state.subtitleFilter, // 使用字幕筛选
+          subtitle: state.subtitleFilter,
         );
       }
 
@@ -163,34 +193,39 @@ class WorksNotifier extends StateNotifier<WorksState> {
           .toList();
 
       final totalCount = pagination?['totalCount'] as int? ?? 0;
-      final currentPage = pagination?['currentPage'] as int? ?? 1;
+      final currentPage = pagination?['currentPage'] as int? ?? page;
 
-      // 热门推荐最多100个，需要特殊处理hasMore
       bool hasMore;
-      if (state.displayMode == DisplayMode.popular) {
-        hasMore =
-            works.length >= 20 && totalCount > (page * 20) && totalCount <= 100;
+      bool isLastPage = false;
+
+      if (state.displayMode == DisplayMode.popular ||
+          state.displayMode == DisplayMode.recommended) {
+        // 热门/推荐模式: 滚动加载,最多100条
+        final currentTotal =
+            refresh ? works.length : state.works.length + works.length;
+        hasMore = works.length >= pageSize &&
+            currentTotal < 100 &&
+            currentTotal < totalCount;
+        isLastPage = !hasMore && works.isNotEmpty;
       } else {
-        hasMore = works.length >= 20 && (page * 20) < totalCount;
+        // 全部模式: 分页
+        hasMore = (currentPage * pageSize) < totalCount;
+        isLastPage = !hasMore && works.isNotEmpty;
       }
 
-      if (refresh) {
-        state = state.copyWith(
-          works: works,
-          isLoading: false,
-          currentPage: currentPage + 1,
-          totalCount: totalCount,
-          hasMore: hasMore,
-        );
-      } else {
-        state = state.copyWith(
-          works: [...state.works, ...works],
-          isLoading: false,
-          currentPage: currentPage + 1,
-          totalCount: totalCount,
-          hasMore: hasMore,
-        );
-      }
+      // 全部模式:替换数据; 热门/推荐:累加数据
+      final newWorks =
+          isAllMode || refresh ? works : [...state.works, ...works];
+
+      state = state.copyWith(
+        works: newWorks,
+        isLoading: false,
+        currentPage: isAllMode ? currentPage : currentPage + 1,
+        totalCount: totalCount,
+        hasMore: hasMore,
+        pageSize: pageSize,
+        isLastPage: isLastPage,
+      );
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -201,6 +236,32 @@ class WorksNotifier extends StateNotifier<WorksState> {
 
   Future<void> refresh() async {
     await loadWorks(refresh: true);
+  }
+
+  // 跳转到指定页(仅全部模式)
+  Future<void> goToPage(int page) async {
+    if (state.displayMode != DisplayMode.all) return;
+    if (page < 1) return;
+
+    // 检查页码是否超出范围
+    final maxPage = (state.totalCount / state.pageSize).ceil();
+    if (page > maxPage && maxPage > 0) return;
+
+    await loadWorks(targetPage: page);
+  }
+
+  // 下一页(仅全部模式)
+  Future<void> nextPage() async {
+    if (state.displayMode != DisplayMode.all) return;
+    if (!state.hasMore || state.isLoading) return;
+    await loadWorks(targetPage: state.currentPage + 1);
+  }
+
+  // 上一页(仅全部模式)
+  Future<void> previousPage() async {
+    if (state.displayMode != DisplayMode.all) return;
+    if (state.currentPage <= 1 || state.isLoading) return;
+    await loadWorks(targetPage: state.currentPage - 1);
   }
 
   void setSortOption(SortOption option) {
@@ -267,5 +328,5 @@ class WorksNotifier extends StateNotifier<WorksState> {
 // Providers
 final worksProvider = StateNotifierProvider<WorksNotifier, WorksState>((ref) {
   final apiService = ref.watch(kikoeruApiServiceProvider);
-  return WorksNotifier(apiService);
+  return WorksNotifier(apiService, ref);
 });

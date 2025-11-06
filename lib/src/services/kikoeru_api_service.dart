@@ -32,10 +32,8 @@ class KikoeruApiService {
             final isSignupRequest = options.method == 'POST' &&
                 (options.path.contains('/api/auth/signup') ||
                     options.path.contains('/api/auth/reg'));
-            final isRecommenderRequest = options.method == 'POST' &&
-                options.path.contains('/api/recommender/recommend-for-user');
 
-            if (!isLoginRequest && !isSignupRequest && !isRecommenderRequest) {
+            if (!isLoginRequest && !isSignupRequest) {
               options.headers['Authorization'] = 'Bearer $_token';
             }
           }
@@ -168,6 +166,10 @@ class KikoeruApiService {
 
   Future<Map<String, dynamic>> register(
       String username, String password, String host) async {
+    // Save the original token at the very beginning
+    // This ensures we can restore it if registration fails
+    final originalToken = _token;
+
     // Set up host first without token
     if (host.startsWith('http://') || host.startsWith('https://')) {
       _host = host;
@@ -189,6 +191,10 @@ class KikoeruApiService {
           '766cc58d-7f1e-4958-9a93-913400f378dc'; // Default recommender
 
       try {
+        // Clear token to get registration info
+        // (with token, this endpoint returns recommendations; without token, returns registration info)
+        _token = null;
+
         final recommenderResponse = await _dio.post(
           '/api/recommender/recommend-for-user',
           data: {
@@ -212,6 +218,7 @@ class KikoeruApiService {
       }
 
       // Step 2: Register with recommender UUID
+      // Token is already cleared from step 1
       final response = await _dio.post(
         '/api/auth/reg',
         data: {
@@ -224,10 +231,16 @@ class KikoeruApiService {
       // If registration successful, extract and store token
       if (response.data is Map && response.data['token'] != null) {
         _token = response.data['token'];
+      } else {
+        // If no token returned, restore original token
+        _token = originalToken;
       }
 
       return response.data;
     } catch (e) {
+      // IMPORTANT: Restore original token on failure
+      // This prevents logged-in users from losing their session
+      _token = originalToken;
       throw KikoeruApiException('Registration failed', e);
     }
   }
@@ -274,6 +287,7 @@ class KikoeruApiService {
     int pageSize = 20,
     String? keyword,
     int? subtitle,
+    List<String>? withPlaylistStatus,
   }) async {
     try {
       final data = {
@@ -282,7 +296,7 @@ class KikoeruApiService {
         'pageSize': pageSize,
         'subtitle': subtitle ?? 0,
         'localSubtitledWorks': [],
-        'withPlaylistStatus': [],
+        'withPlaylistStatus': withPlaylistStatus ?? [],
       };
 
       final response = await _dio.post(
@@ -292,6 +306,38 @@ class KikoeruApiService {
       return response.data;
     } catch (e) {
       throw KikoeruApiException('Failed to get popular works', e);
+    }
+  }
+
+  // Get recommended works for user (max 100 items, no sorting)
+  // This endpoint returns registration info when not logged in,
+  // and returns recommended works when logged in with token
+  Future<Map<String, dynamic>> getRecommendedWorks({
+    required String recommenderUuid,
+    int page = 1,
+    int pageSize = 20,
+    String? keyword,
+    int? subtitle,
+    List<String>? withPlaylistStatus,
+  }) async {
+    try {
+      final data = {
+        'keyword': keyword ?? ' ',
+        'recommenderUuid': recommenderUuid,
+        'page': page,
+        'pageSize': pageSize,
+        'subtitle': subtitle ?? 0,
+        'localSubtitledWorks': [],
+        'withPlaylistStatus': withPlaylistStatus ?? [],
+      };
+
+      final response = await _dio.post(
+        '/api/recommender/recommend-for-user',
+        data: data,
+      );
+      return response.data;
+    } catch (e) {
+      throw KikoeruApiException('Failed to get recommended works', e);
     }
   }
 

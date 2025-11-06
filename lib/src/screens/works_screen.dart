@@ -14,7 +14,9 @@ class WorksScreen extends ConsumerStatefulWidget {
 }
 
 class _WorksScreenState extends ConsumerState<WorksScreen> {
+  final TextEditingController _pageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  bool _showPagination = false;
 
   @override
   void initState() {
@@ -28,29 +30,52 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      final worksState = ref.read(worksProvider);
-      if (!worksState.isLoading && worksState.hasMore) {
+    // 使用防抖机制,避免频繁调用
+    if (!_scrollController.hasClients) return;
+
+    final worksState = ref.read(worksProvider);
+    final isNearBottom = _scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200;
+
+    // 全部模式:显示/隐藏分页控件
+    if (worksState.displayMode == DisplayMode.all) {
+      if (isNearBottom != _showPagination) {
+        setState(() {
+          _showPagination = isNearBottom;
+        });
+      }
+    }
+    // 热门/推荐模式:自动加载更多
+    else {
+      if (isNearBottom && !worksState.isLoading && worksState.hasMore) {
         ref.read(worksProvider.notifier).loadWorks();
+      }
+      // 确保分页控件隐藏
+      if (_showPagination) {
+        setState(() {
+          _showPagination = false;
+        });
       }
     }
   }
 
   void _showSortDialog(BuildContext context) {
-    final isPopularMode =
-        ref.read(worksProvider).displayMode == DisplayMode.popular;
+    final displayMode = ref.read(worksProvider).displayMode;
+    final isRecommendMode = displayMode == DisplayMode.popular ||
+        displayMode == DisplayMode.recommended;
 
-    if (isPopularMode) {
+    if (isRecommendMode) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('热门推荐模式不支持排序'),
-          duration: Duration(seconds: 2),
+        SnackBar(
+          content: Text(
+              displayMode == DisplayMode.popular ? '热门推荐模式不支持排序' : '推荐模式不支持排序'),
+          duration: const Duration(seconds: 2),
         ),
       );
       return;
@@ -87,162 +112,29 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
   @override
   Widget build(BuildContext context) {
     final worksState = ref.watch(worksProvider);
-    final isPopularMode = worksState.displayMode == DisplayMode.popular;
+    final isRecommendMode = worksState.displayMode == DisplayMode.popular ||
+        worksState.displayMode == DisplayMode.recommended;
 
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 0, // 让标题区紧贴左边
-        title: LayoutBuilder(
-          builder: (context, constraints) {
-            // 计算单列卡片的宽度
-            // 屏幕宽度 - 左右padding(16*2) - 中间间距(12) 然后除以2
-            final screenWidth = MediaQuery.of(context).size.width;
-            final cardWidth = (screenWidth - 16 * 2 - 12) / 2;
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.only(left: 16),
+          child: Row(
+            children: [
+              // ===== 左侧模式切换按钮组 =====
+              _buildModeButtons(context, worksState),
 
-            return Padding(
-              padding: const EdgeInsets.only(left: 16),
-              child: Row(
-                children: [
-                  // 左侧：显示模式切换按钮组
-                  SizedBox(
-                    width: cardWidth,
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // 全部作品按钮
-                        Expanded(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: const BorderRadius.horizontal(
-                                left: Radius.circular(8),
-                              ),
-                              onTap: () => ref
-                                  .read(worksProvider.notifier)
-                                  .setDisplayMode(DisplayMode.all),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color:
-                                      worksState.displayMode == DisplayMode.all
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primaryContainer
-                                          : Colors.grey.shade200,
-                                  borderRadius: const BorderRadius.horizontal(
-                                    left: Radius.circular(8),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.grid_view,
-                                      size: 18,
-                                      color: worksState.displayMode ==
-                                              DisplayMode.all
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Colors.grey.shade700,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '全部',
-                                      style: TextStyle(
-                                        color: worksState.displayMode ==
-                                                DisplayMode.all
-                                            ? Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                            : Colors.grey.shade700,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        // 热门推荐按钮
-                        Expanded(
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              borderRadius: const BorderRadius.horizontal(
-                                right: Radius.circular(8),
-                              ),
-                              onTap: () => ref
-                                  .read(worksProvider.notifier)
-                                  .setDisplayMode(DisplayMode.popular),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 8,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: worksState.displayMode ==
-                                          DisplayMode.popular
-                                      ? Theme.of(context)
-                                          .colorScheme
-                                          .primaryContainer
-                                      : Colors.grey.shade200,
-                                  borderRadius: const BorderRadius.horizontal(
-                                    right: Radius.circular(8),
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.local_fire_department,
-                                      size: 18,
-                                      color: worksState.displayMode ==
-                                              DisplayMode.popular
-                                          ? Theme.of(context)
-                                              .colorScheme
-                                              .primary
-                                          : Colors.grey.shade700,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      '热门',
-                                      style: TextStyle(
-                                        color: worksState.displayMode ==
-                                                DisplayMode.popular
-                                            ? Theme.of(context)
-                                                .colorScheme
-                                                .primary
-                                            : Colors.grey.shade700,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // ✅加空白区或 Spacer，让右侧按钮与切换区隔开
-                  const Spacer(),
-                ],
-              ),
-            );
-          },
+              const Spacer(), // 👈 推动右侧按钮到最右
+            ],
+          ),
         ),
         actions: [
           IconButton(
             icon: _getLayoutIcon(worksState.layoutType),
+            iconSize: 22,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () =>
                 ref.read(worksProvider.notifier).toggleLayoutType(),
             tooltip: _getLayoutTooltip(worksState.layoutType),
@@ -256,6 +148,9 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
                   ? Theme.of(context).colorScheme.primary
                   : null,
             ),
+            iconSize: 22,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
             onPressed: () =>
                 ref.read(worksProvider.notifier).toggleSubtitleFilter(),
             tooltip: worksState.subtitleFilter == 1 ? '显示全部作品' : '仅显示带字幕作品',
@@ -263,14 +158,111 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
           IconButton(
             icon: Icon(
               Icons.sort,
-              color: isPopularMode ? Colors.grey : null,
+              color: isRecommendMode ? Colors.grey : null,
             ),
-            onPressed: isPopularMode ? null : () => _showSortDialog(context),
-            tooltip: isPopularMode ? '热门推荐不支持排序' : '排序',
+            iconSize: 22,
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+            onPressed: isRecommendMode ? null : () => _showSortDialog(context),
+            tooltip: isRecommendMode ? '推荐模式不支持排序' : '排序',
           ),
         ],
       ),
       body: _buildBody(worksState),
+    );
+  }
+
+  /// ===== 构建「全部 / 热门 / 推荐」按钮组 =====
+  Widget _buildModeButtons(BuildContext context, WorksState worksState) {
+    final notifier = ref.read(worksProvider.notifier);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildModeButton(
+          context: context,
+          icon: Icons.grid_view,
+          label: '全部',
+          isSelected: worksState.displayMode == DisplayMode.all,
+          borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
+          onTap: () {
+            notifier.setDisplayMode(DisplayMode.all);
+            _scrollToTop();
+          },
+        ),
+        _buildModeButton(
+          context: context,
+          icon: Icons.local_fire_department,
+          label: '热门',
+          isSelected: worksState.displayMode == DisplayMode.popular,
+          onTap: () {
+            notifier.setDisplayMode(DisplayMode.popular);
+            _scrollToTop();
+          },
+        ),
+        _buildModeButton(
+          context: context,
+          icon: Icons.auto_awesome,
+          label: '推荐',
+          isSelected: worksState.displayMode == DisplayMode.recommended,
+          borderRadius:
+              const BorderRadius.horizontal(right: Radius.circular(6)),
+          onTap: () {
+            notifier.setDisplayMode(DisplayMode.recommended);
+            _scrollToTop();
+          },
+        ),
+      ],
+    );
+  }
+
+  /// ===== 单个模式按钮样式封装 =====
+  Widget _buildModeButton({
+    required BuildContext context,
+    required IconData icon,
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    BorderRadius? borderRadius,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: borderRadius ?? BorderRadius.zero,
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primaryContainer
+                : Colors.grey.shade200,
+            borderRadius: borderRadius ?? BorderRadius.zero,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: isSelected
+                    ? Theme.of(context).colorScheme.primary
+                    : Colors.grey.shade700,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                label,
+                style: TextStyle(
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey.shade700,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -363,6 +355,8 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
   }
 
   Widget _buildGridView(WorksState worksState, {required int crossAxisCount}) {
+    final isAllMode = worksState.displayMode == DisplayMode.all;
+
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
@@ -372,10 +366,11 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
             crossAxisCount: crossAxisCount,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
-            childCount: worksState.works.length + (worksState.hasMore ? 1 : 0),
+            childCount: worksState.works.length +
+                (!isAllMode && worksState.hasMore ? 1 : 0),
             itemBuilder: (context, index) {
-              if (index == worksState.works.length) {
-                // Loading indicator at the bottom
+              // 热门/推荐模式:在底部显示加载指示器
+              if (!isAllMode && index == worksState.works.length) {
                 return const Center(
                   child: Padding(
                     padding: EdgeInsets.all(16),
@@ -392,32 +387,345 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
             },
           ),
         ),
+
+        // 热门/推荐模式:到底提示
+        if (!isAllMode && worksState.isLastPage)
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.info_outline,
+                      size: 18, color: Colors.grey.shade600),
+                  const SizedBox(width: 8),
+                  Text(
+                    '已经到底啦~ (最多显示100条)',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+        // 全部模式:分页控件(集成在瀑布流中)
+        if (isAllMode && _showPagination)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverToBoxAdapter(
+              child: _buildPaginationBar(worksState),
+            ),
+          ),
       ],
     );
   }
 
   Widget _buildListView(WorksState worksState) {
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(8),
-      itemCount: worksState.works.length + (worksState.hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == worksState.works.length) {
-          // Loading indicator at the bottom
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+    final isAllMode = worksState.displayMode == DisplayMode.all;
 
-        final work = worksState.works[index];
-        return EnhancedWorkCard(
-          work: work,
-          crossAxisCount: 1, // 列表视图
-        );
-      },
+    return CustomScrollView(
+      controller: _scrollController,
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.all(8),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (context, index) {
+                // 热门/推荐模式:加载指示器
+                if (!isAllMode &&
+                    index == worksState.works.length &&
+                    worksState.hasMore) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: CircularProgressIndicator(),
+                    ),
+                  );
+                }
+
+                // 热门/推荐模式:到底提示
+                if (!isAllMode &&
+                    index == worksState.works.length &&
+                    worksState.isLastPage) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 24, horizontal: 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.info_outline,
+                            size: 18, color: Colors.grey.shade600),
+                        const SizedBox(width: 8),
+                        Text(
+                          '已经到底啦~ (最多显示100条)',
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                final work = worksState.works[index];
+                return EnhancedWorkCard(
+                  work: work,
+                  crossAxisCount: 1, // 列表视图
+                );
+              },
+              childCount: worksState.works.length +
+                  (!isAllMode && worksState.hasMore ? 1 : 0) +
+                  (!isAllMode && worksState.isLastPage ? 1 : 0),
+            ),
+          ),
+        ),
+
+        // 全部模式:分页控件(集成在列表中)
+        if (isAllMode && _showPagination)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+            sliver: SliverToBoxAdapter(
+              child: _buildPaginationBar(worksState),
+            ),
+          ),
+      ],
     );
+  }
+
+  // 分页控制栏(仅全部模式使用)
+  Widget _buildPaginationBar(WorksState worksState) {
+    final maxPage = worksState.totalCount > 0
+        ? (worksState.totalCount / worksState.pageSize).ceil()
+        : 1;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 页码和总数信息
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '第 ${worksState.currentPage} / $maxPage 页',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  '共 ${worksState.totalCount} 条',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // 按钮组
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // 上一页
+              _buildPageButton(
+                icon: Icons.chevron_left,
+                label: '上一页',
+                enabled: worksState.currentPage > 1 && !worksState.isLoading,
+                onPressed: () {
+                  ref.read(worksProvider.notifier).previousPage();
+                  _scrollToTop();
+                },
+              ),
+              const SizedBox(width: 8),
+
+              // 跳转输入
+              _buildPageJumpButton(worksState, maxPage),
+              const SizedBox(width: 8),
+
+              // 下一页
+              _buildPageButton(
+                label: '下一页',
+                icon: Icons.chevron_right,
+                enabled: worksState.hasMore && !worksState.isLoading,
+                onPressed: () {
+                  ref.read(worksProvider.notifier).nextPage();
+                  _scrollToTop();
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 分页按钮
+  Widget _buildPageButton({
+    required IconData icon,
+    required String label,
+    required bool enabled,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: enabled
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Theme.of(context).colorScheme.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: enabled ? onPressed : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 18,
+                color: enabled
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withOpacity(0.5),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: enabled
+                      ? Theme.of(context).colorScheme.onPrimaryContainer
+                      : Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withOpacity(0.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 页码跳转按钮
+  Widget _buildPageJumpButton(WorksState worksState, int maxPage) {
+    return Material(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () => _showPageJumpDialog(worksState, maxPage),
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.edit_location_alt,
+                size: 18,
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '跳转',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 显示页码跳转对话框
+  void _showPageJumpDialog(WorksState worksState, int maxPage) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('跳转到指定页'),
+        content: TextField(
+          controller: _pageController,
+          keyboardType: TextInputType.number,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: '页码',
+            hintText: '输入 1-$maxPage',
+            border: const OutlineInputBorder(),
+            prefixIcon: const Icon(Icons.tag),
+          ),
+          onSubmitted: (value) {
+            Navigator.of(context).pop();
+            _handlePageJump(value, maxPage);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _handlePageJump(_pageController.text, maxPage);
+            },
+            child: const Text('跳转'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 处理页码跳转
+  void _handlePageJump(String value, int maxPage) {
+    final page = int.tryParse(value);
+    if (page != null && page > 0 && page <= maxPage) {
+      ref.read(worksProvider.notifier).goToPage(page);
+      _pageController.clear();
+      _scrollToTop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('请输入 1-$maxPage 之间的页码'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+      _pageController.clear();
+    }
+  }
+
+  // 滚动到顶部
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 }
