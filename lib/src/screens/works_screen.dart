@@ -400,7 +400,7 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
                       size: 18, color: Colors.grey.shade600),
                   const SizedBox(width: 8),
                   Text(
-                    '已经到底啦~ (最多显示100条)',
+                    '已经到底啦~杂库~',
                     style: TextStyle(
                       color: Colors.grey.shade600,
                       fontSize: 14,
@@ -460,7 +460,7 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
                             size: 18, color: Colors.grey.shade600),
                         const SizedBox(width: 8),
                         Text(
-                          '已经到底啦~ (最多显示100条)',
+                          '已经到底啦~杂库~',
                           style: TextStyle(
                             color: Colors.grey.shade600,
                             fontSize: 14,
@@ -567,6 +567,7 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
                 label: '下一页',
                 icon: Icons.chevron_right,
                 enabled: worksState.hasMore && !worksState.isLoading,
+                iconOnRight: true, // 图标放在右边
                 onPressed: () {
                   ref.read(worksProvider.notifier).nextPage();
                   _scrollToTop();
@@ -585,7 +586,26 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
     required String label,
     required bool enabled,
     required VoidCallback onPressed,
+    bool iconOnRight = false, // 图标是否在右边
   }) {
+    final iconWidget = Icon(
+      icon,
+      size: 18,
+      color: enabled
+          ? Theme.of(context).colorScheme.onPrimaryContainer
+          : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+    );
+
+    final textWidget = Text(
+      label,
+      style: TextStyle(
+        fontSize: 13,
+        color: enabled
+            ? Theme.of(context).colorScheme.onPrimaryContainer
+            : Theme.of(context).colorScheme.onSurfaceVariant.withOpacity(0.5),
+      ),
+    );
+
     return Material(
       color: enabled
           ? Theme.of(context).colorScheme.primaryContainer
@@ -598,31 +618,9 @@ class _WorksScreenState extends ConsumerState<WorksScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 18,
-                color: enabled
-                    ? Theme.of(context).colorScheme.onPrimaryContainer
-                    : Theme.of(context)
-                        .colorScheme
-                        .onSurfaceVariant
-                        .withOpacity(0.5),
-              ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: enabled
-                      ? Theme.of(context).colorScheme.onPrimaryContainer
-                      : Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant
-                          .withOpacity(0.5),
-                ),
-              ),
-            ],
+            children: iconOnRight
+                ? [textWidget, const SizedBox(width: 4), iconWidget]
+                : [iconWidget, const SizedBox(width: 4), textWidget],
           ),
         ),
       ),

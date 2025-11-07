@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'media_player_demo_screen.dart';
 import 'account_management_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -19,23 +18,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // Demo section
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.play_circle_outline),
-              title: const Text('媒体播放器演示'),
-              subtitle: const Text('测试音频和视频播放功能'),
-              trailing: const Icon(Icons.arrow_forward_ios),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (context) => const MediaPlayerDemoScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
           // Account Management section
           Card(
             child: ListTile(
