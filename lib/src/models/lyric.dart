@@ -27,7 +27,7 @@ class LyricParser {
 
     // 如果解析结果为空，提示失败
     if (result.isEmpty) {
-      throw FormatException("解析失败，格式不支持");
+      throw const FormatException("解析失败，格式不支持");
     }
 
     return result;

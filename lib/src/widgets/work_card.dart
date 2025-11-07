@@ -148,7 +148,7 @@ class WorkCard extends ConsumerWidget {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceVariant,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,

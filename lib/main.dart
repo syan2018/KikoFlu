@@ -9,7 +9,6 @@ import 'src/utils/theme.dart';
 import 'src/services/storage_service.dart';
 import 'src/services/account_database.dart';
 import 'src/providers/audio_provider.dart';
-import 'src/providers/video_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -46,7 +45,6 @@ class _KikoeruAppState extends ConsumerState<KikoeruApp> {
     // Initialize audio and video services
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(audioPlayerControllerProvider.notifier).initialize();
-      ref.read(videoPlayerControllerProvider.notifier).initialize();
     });
   }
 

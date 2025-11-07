@@ -27,7 +27,7 @@ class _LyricPlayerScreenState extends ConsumerState<LyricPlayerScreen> {
     if (!_autoScroll || !_scrollController.hasClients) return;
 
     final screenHeight = MediaQuery.of(context).size.height;
-    final itemHeight = 60.0; // 估算的每行高度
+    const itemHeight = 60.0; // 估算的每行高度
     final targetPosition =
         index * itemHeight - screenHeight / 2 + itemHeight / 2;
 

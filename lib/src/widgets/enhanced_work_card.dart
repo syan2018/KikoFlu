@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../models/work.dart';
 import '../providers/auth_provider.dart';
 import '../screens/work_detail_screen.dart';
+import 'tag_chip.dart';
+import 'va_chip.dart';
 
 class EnhancedWorkCard extends ConsumerWidget {
   final Work work;
@@ -26,8 +29,26 @@ class EnhancedWorkCard extends ConsumerWidget {
     final cardOnTap = onTap ??
         () {
           Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (context) => WorkDetailScreen(work: work),
+            PageRouteBuilder(
+              pageBuilder: (context, animation, secondaryAnimation) =>
+                  WorkDetailScreen(work: work),
+              transitionsBuilder:
+                  (context, animation, secondaryAnimation, child) {
+                const begin = Offset(0.0, 0.1);
+                const end = Offset.zero;
+                const curve = Curves.easeInOut;
+                var tween = Tween(begin: begin, end: end)
+                    .chain(CurveTween(curve: curve));
+                var offsetAnimation = animation.drive(tween);
+                return SlideTransition(
+                  position: offsetAnimation,
+                  child: FadeTransition(
+                    opacity: animation,
+                    child: child,
+                  ),
+                );
+              },
+              transitionDuration: const Duration(milliseconds: 300),
             ),
           );
         };
@@ -379,30 +400,51 @@ class EnhancedWorkCard extends ConsumerWidget {
   }
 
   Widget _buildCoverImage(BuildContext context, String host, String token) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      child: host.isNotEmpty
-          ? Image.network(
-              work.getCoverImageUrl(host, token: token),
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return _buildPlaceholder(context);
-              },
-              loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child;
-                return Center(
-                  child: CircularProgressIndicator(
-                    value: loadingProgress.expectedTotalBytes != null
-                        ? loadingProgress.cumulativeBytesLoaded /
-                            loadingProgress.expectedTotalBytes!
-                        : null,
-                    strokeWidth: 2,
-                  ),
-                );
-              },
-            )
-          : _buildPlaceholder(context),
+    // 使用缓存网络图片，减少滚动时的解码与网络开销，提升流畅度
+    if (host.isEmpty) {
+      return _buildPlaceholder(context);
+    }
+
+    final url = work.getCoverImageUrl(host, token: token);
+    final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+    // 依据不同布局控制图片缓存尺寸，避免加载超大原图导致卡顿
+    int targetWidth;
+    switch (crossAxisCount) {
+      case 3:
+        targetWidth =
+            (MediaQuery.of(context).size.width / 3 * devicePixelRatio).round();
+        break;
+      case 2:
+        targetWidth =
+            (MediaQuery.of(context).size.width / 2 * devicePixelRatio).round();
+        break;
+      default:
+        targetWidth = (80 * devicePixelRatio).round(); // 列表模式封面固定宽度
+    }
+
+    return Hero(
+      tag: 'work_cover_${work.id}',
+      child: RepaintBoundary(
+        child: CachedNetworkImage(
+          imageUrl: url,
+          cacheKey: 'work_cover_${work.id}',
+          memCacheWidth: targetWidth, // 降低解码分辨率，减少 GPU / CPU 压力
+          fadeInDuration: const Duration(milliseconds: 120),
+          fadeOutDuration: const Duration(milliseconds: 90),
+          placeholderFadeInDuration: const Duration(milliseconds: 80),
+          placeholder: (context, _) => _buildPlaceholder(context),
+          errorWidget: (context, _, __) => _buildPlaceholder(context),
+          imageBuilder: (context, imageProvider) => Container(
+            decoration: BoxDecoration(
+              image: DecorationImage(
+                image: imageProvider,
+                fit: BoxFit.cover,
+                filterQuality: FilterQuality.low, // 优化滚动时的重采样性能
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -480,23 +522,12 @@ class EnhancedWorkCard extends ConsumerWidget {
         spacing: 3,
         runSpacing: 2,
         children: work.tags!.map((tag) {
-          return GestureDetector(
-            onTap: () => _onTagTap(context, tag),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                tag.name,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
+          return TagChip(
+            tag: tag,
+            fontSize: 10,
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            borderRadius: 6,
+            fontWeight: FontWeight.w500,
           );
         }).toList(),
       ),
@@ -510,20 +541,12 @@ class EnhancedWorkCard extends ConsumerWidget {
         spacing: 3,
         runSpacing: 2,
         children: work.vas!.map((va) {
-          return Container(
+          return VaChip(
+            va: va,
+            fontSize: 10,
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.tertiaryContainer,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              va.name,
-              style: TextStyle(
-                fontSize: 10,
-                color: Theme.of(context).colorScheme.onTertiaryContainer,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            borderRadius: 6,
+            fontWeight: FontWeight.w500,
           );
         }).toList(),
       ),
@@ -535,23 +558,12 @@ class EnhancedWorkCard extends ConsumerWidget {
       spacing: 4,
       runSpacing: 4,
       children: work.tags!.map((tag) {
-        return GestureDetector(
-          onTap: () => _onTagTap(context, tag),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              tag.name,
-              style: TextStyle(
-                fontSize: 11,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
+        return TagChip(
+          tag: tag,
+          fontSize: 11,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          borderRadius: 12,
+          fontWeight: FontWeight.w500,
         );
       }).toList(),
     );
@@ -562,31 +574,14 @@ class EnhancedWorkCard extends ConsumerWidget {
       spacing: 4,
       runSpacing: 4,
       children: work.vas!.map((va) {
-        return Container(
+        return VaChip(
+          va: va,
+          fontSize: 11,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.tertiaryContainer,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(
-            va.name,
-            style: TextStyle(
-              fontSize: 11,
-              color: Theme.of(context).colorScheme.onTertiaryContainer,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          borderRadius: 12,
+          fontWeight: FontWeight.w500,
         );
       }).toList(),
-    );
-  }
-
-  void _onTagTap(BuildContext context, tag) {
-    // 导航到搜索界面并搜索该标签
-    // TODO: 实现标签搜索功能
-    // 可以通过Navigator导航到搜索界面，并传递标签参数
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('搜索标签: ${tag.name}')),
     );
   }
 }

@@ -48,8 +48,9 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer> {
           _lastTrackId = track.id;
         }
 
-        if (track == null || !isMiniPlayerVisible)
+        if (track == null || !isMiniPlayerVisible) {
           return const SizedBox.shrink();
+        }
 
         final progress = position.when(
           data: (pos) => duration.when(
@@ -271,41 +272,71 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer> {
                                 behavior: HitTestBehavior.opaque,
                                 onTap: () {
                                   Navigator.of(context).push(
-                                    MaterialPageRoute(
-                                        builder: (context) =>
-                                            const AudioPlayerScreen()),
+                                    PageRouteBuilder(
+                                      pageBuilder: (context, animation,
+                                              secondaryAnimation) =>
+                                          const AudioPlayerScreen(),
+                                      transitionsBuilder: (context, animation,
+                                          secondaryAnimation, child) {
+                                        const begin = Offset(0.0, 1.0);
+                                        const end = Offset.zero;
+                                        const curve = Curves.easeInOut;
+                                        var tween = Tween(
+                                                begin: begin, end: end)
+                                            .chain(CurveTween(curve: curve));
+                                        var offsetAnimation =
+                                            animation.drive(tween);
+                                        return SlideTransition(
+                                          position: offsetAnimation,
+                                          child: FadeTransition(
+                                            opacity: animation,
+                                            child: child,
+                                          ),
+                                        );
+                                      },
+                                      transitionDuration:
+                                          const Duration(milliseconds: 300),
+                                    ),
                                   );
                                 },
                                 child: Row(
                                   children: [
-                                    // Album art (use work cover)
-                                    Container(
-                                      width: 48,
-                                      height: 48,
-                                      decoration: BoxDecoration(
-                                        borderRadius: BorderRadius.circular(8),
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .surfaceVariant,
+                                    // Album art (use work cover) with Hero animation
+                                    Hero(
+                                      tag: 'audio_player_artwork_${track.id}',
+                                      child: Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .surfaceContainerHighest,
+                                        ),
+                                        child: (workCoverUrl ??
+                                                    track.artworkUrl) !=
+                                                null
+                                            ? ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                                child: Image.network(
+                                                  (workCoverUrl ??
+                                                      track.artworkUrl)!,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (context, error,
+                                                      stackTrace) {
+                                                    return const Icon(
+                                                        Icons.album,
+                                                        size: 32);
+                                                  },
+                                                ),
+                                              )
+                                            : const Icon(
+                                                Icons.album,
+                                                size: 32,
+                                              ),
                                       ),
-                                      child:
-                                          (workCoverUrl ?? track.artworkUrl) !=
-                                                  null
-                                              ? ClipRRect(
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                  child: Image.network(
-                                                    (workCoverUrl ??
-                                                        track.artworkUrl)!,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (context,
-                                                        error, stackTrace) {
-                                                      return const Icon(
-                                                          Icons.music_note);
-                                                    },
-                                                  ),
-                                                )
-                                              : const Icon(Icons.music_note),
                                     ),
                                     const SizedBox(width: 12),
                                     // Track info
@@ -496,6 +527,26 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 8.0),
+          child: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8.0),
+            child: IconButton(
+              icon: const Icon(Icons.queue_music),
+              onPressed: () {
+                _showPlaylistDialog(context, ref);
+              },
+              tooltip: '播放列表',
+            ),
+          ),
+        ],
+        automaticallyImplyLeading: false,
       ),
       body: Stack(
         children: [
@@ -528,8 +579,7 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
                 child: Column(
                   children: [
                     // Album art (clickable to open lyrics if available)
-                    Expanded(
-                      flex: 3,
+                    Flexible(
                       child: Consumer(
                         builder: (context, ref, child) {
                           final lyricState = ref.watch(lyricControllerProvider);
@@ -546,49 +596,75 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
                                     );
                                   }
                                 : null,
-                            child: Container(
-                              width: double.infinity,
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(16),
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .surfaceVariant,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.1),
-                                    blurRadius: 20,
-                                    offset: const Offset(0, 10),
+                            child: Center(
+                              child: Hero(
+                                tag: 'audio_player_artwork_${track.id}',
+                                child: ConstrainedBox(
+                                  constraints: BoxConstraints(
+                                    maxWidth:
+                                        MediaQuery.of(context).size.width - 48,
+                                    maxHeight:
+                                        MediaQuery.of(context).size.height *
+                                            0.4, // 最大高度为屏幕的40%
                                   ),
-                                ],
-                              ),
-                              child: (workCoverUrl ?? track.artworkUrl) != null
-                                  ? ClipRRect(
+                                  child: Container(
+                                    decoration: BoxDecoration(
                                       borderRadius: BorderRadius.circular(16),
-                                      child: Image.network(
-                                        (workCoverUrl ?? track.artworkUrl)!,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                          return const Icon(
-                                            Icons.music_note,
-                                            size: 120,
-                                          );
-                                        },
-                                        loadingBuilder:
-                                            (context, child, loadingProgress) {
-                                          if (loadingProgress == null)
-                                            return child;
-                                          return const Icon(
-                                            Icons.music_note,
-                                            size: 120,
-                                          );
-                                        },
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.music_note,
-                                      size: 120,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.1),
+                                          blurRadius: 20,
+                                          offset: const Offset(0, 10),
+                                        ),
+                                      ],
                                     ),
+                                    child: (workCoverUrl ?? track.artworkUrl) !=
+                                            null
+                                        ? ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            child: Image.network(
+                                              (workCoverUrl ??
+                                                  track.artworkUrl)!,
+                                              fit: BoxFit.contain,
+                                              errorBuilder:
+                                                  (context, error, stackTrace) {
+                                                return const Padding(
+                                                  padding: EdgeInsets.all(40),
+                                                  child: Icon(
+                                                    Icons.album,
+                                                    size: 120,
+                                                  ),
+                                                );
+                                              },
+                                              loadingBuilder: (context, child,
+                                                  loadingProgress) {
+                                                if (loadingProgress == null) {
+                                                  return child;
+                                                }
+                                                return const Padding(
+                                                  padding: EdgeInsets.all(40),
+                                                  child: Icon(
+                                                    Icons.album,
+                                                    size: 120,
+                                                  ),
+                                                );
+                                              },
+                                            ),
+                                          )
+                                        : const Padding(
+                                            padding: EdgeInsets.all(40),
+                                            child: Icon(
+                                              Icons.album,
+                                              size: 120,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
                             ),
                           );
                         },
@@ -1025,6 +1101,174 @@ class _AudioPlayerScreenState extends ConsumerState<AudioPlayerScreen> {
             child: const Text('确定'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showPlaylistDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (context) => Consumer(
+        builder: (context, ref, child) {
+          final queueAsync = ref.watch(queueProvider);
+          final currentTrack = ref.watch(currentTrackProvider);
+          final authState = ref.watch(authProvider);
+
+          // Get current queue synchronously as fallback
+          final audioService = ref.read(audioPlayerServiceProvider);
+          final currentQueue = audioService.queue;
+
+          return Dialog(
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7,
+                maxWidth: MediaQuery.of(context).size.width * 0.9,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '播放列表',
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // Playlist
+                  Flexible(
+                    child: Builder(
+                      builder: (context) {
+                        // Use stream value if available, otherwise use current queue
+                        final tracks = queueAsync.valueOrNull ?? currentQueue;
+
+                        if (tracks.isEmpty) {
+                          return const Center(
+                            child: Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Text('播放列表为空'),
+                            ),
+                          );
+                        }
+
+                        return ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: tracks.length,
+                          itemBuilder: (context, index) {
+                            final track = tracks[index];
+                            final isCurrentTrack =
+                                currentTrack.valueOrNull?.id == track.id;
+
+                            // Build work cover URL
+                            String? workCoverUrl;
+                            final host = authState.host ?? '';
+                            final token = authState.token ?? '';
+                            if (track.workId != null && host.isNotEmpty) {
+                              var normalizedHost = host;
+                              if (!normalizedHost.startsWith('http://') &&
+                                  !normalizedHost.startsWith('https://')) {
+                                normalizedHost = 'https://$normalizedHost';
+                              }
+                              workCoverUrl = token.isNotEmpty
+                                  ? '$normalizedHost/api/cover/${track.workId}?token=$token'
+                                  : '$normalizedHost/api/cover/${track.workId}';
+                            }
+
+                            return ListTile(
+                              leading: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(4),
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .surfaceContainerHighest,
+                                ),
+                                child: (workCoverUrl ?? track.artworkUrl) !=
+                                        null
+                                    ? ClipRRect(
+                                        borderRadius: BorderRadius.circular(4),
+                                        child: Image.network(
+                                          (workCoverUrl ?? track.artworkUrl)!,
+                                          fit: BoxFit.cover,
+                                          errorBuilder:
+                                              (context, error, stackTrace) {
+                                            return const Icon(Icons.music_note,
+                                                size: 24);
+                                          },
+                                        ),
+                                      )
+                                    : const Icon(Icons.music_note, size: 24),
+                              ),
+                              title: Text(
+                                track.title,
+                                style: TextStyle(
+                                  fontWeight: isCurrentTrack
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  color: isCurrentTrack
+                                      ? Theme.of(context).colorScheme.primary
+                                      : null,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: track.artist != null
+                                  ? Text(
+                                      track.artist!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: isCurrentTrack
+                                            ? Theme.of(context)
+                                                .colorScheme
+                                                .primary
+                                            : null,
+                                      ),
+                                    )
+                                  : null,
+                              trailing: isCurrentTrack
+                                  ? Icon(
+                                      Icons.music_note,
+                                      color:
+                                          Theme.of(context).colorScheme.primary,
+                                    )
+                                  : null,
+                              selected: isCurrentTrack,
+                              onTap: () async {
+                                // Skip to the selected track
+                                await ref
+                                    .read(
+                                        audioPlayerControllerProvider.notifier)
+                                    .skipToIndex(index);
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
+                                }
+                              },
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }

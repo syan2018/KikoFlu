@@ -55,12 +55,12 @@ Map<String, dynamic> _$WorkToJson(Work instance) => <String, dynamic>{
 
 Circle _$CircleFromJson(Map<String, dynamic> json) => Circle(
       id: (json['id'] as num).toInt(),
-      title: json['title'] as String,
+      title: json['name'] as String,
     );
 
 Map<String, dynamic> _$CircleToJson(Circle instance) => <String, dynamic>{
       'id': instance.id,
-      'title': instance.title,
+      'name': instance.title,
     };
 
 Va _$VaFromJson(Map<String, dynamic> json) => Va(

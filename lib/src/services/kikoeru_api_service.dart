@@ -11,8 +11,8 @@ class KikoeruApiService {
   String? _token;
   String? _host;
   int _subtitle = 0; // 1: 带字幕, 0: 不限制 (默认显示所有作品)
-  String _order = 'id';
-  String _sort = 'asc';
+  String _order = 'create_date';
+  String _sort = 'desc'; // 默认降序排列
   int _seed = 35; // 随机种子
 
   KikoeruApiService() {
@@ -404,39 +404,31 @@ class KikoeruApiService {
     }
   }
 
-  // Search API
+  // Search API - 新版搜索接口
   Future<Map<String, dynamic>> searchWorks({
-    String? keyword,
+    required String keyword, // 搜索关键词（可以是组合的搜索条件）
     int page = 1,
+    int pageSize = 20,
     String? order,
     String? sort,
     int? subtitle,
-    List<int>? tags,
-    List<String>? vas, // Va ID是String类型（UUID）
+    bool includeTranslationWorks = true,
   }) async {
     try {
+      // URL编码关键词
+      final encodedKeyword = Uri.encodeComponent(keyword);
+
       final queryParams = <String, dynamic>{
         'page': page,
+        'pageSize': pageSize,
         'order': order ?? _order,
         'sort': sort ?? _sort,
         'subtitle': subtitle ?? _subtitle,
-        'seed': _seed,
+        'includeTranslationWorks': includeTranslationWorks,
       };
 
-      if (keyword != null && keyword.isNotEmpty) {
-        queryParams['keyword'] = keyword;
-      }
-
-      if (tags != null && tags.isNotEmpty) {
-        queryParams['tags'] = tags.join(',');
-      }
-
-      if (vas != null && vas.isNotEmpty) {
-        queryParams['vas'] = vas.join(',');
-      }
-
       final response = await _dio.get(
-        '/api/search',
+        '/api/search/$encodedKeyword',
         queryParameters: queryParams,
       );
       return response.data;

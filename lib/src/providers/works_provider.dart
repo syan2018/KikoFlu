@@ -4,6 +4,7 @@ import 'package:equatable/equatable.dart';
 import '../models/work.dart';
 import '../services/kikoeru_api_service.dart' hide kikoeruApiServiceProvider;
 import 'auth_provider.dart';
+import '../models/sort_options.dart';
 
 // Display mode - 展示模式
 enum DisplayMode {
@@ -23,28 +24,6 @@ enum LayoutType {
   bigGrid // 大网格布局 (2列)
 }
 
-// Sort options - 参考原始代码的简化排序选项
-enum SortOption {
-  release('release', '发布日期'),
-  id('id', 'ID'),
-  price('price', '价格'),
-  create_date('create_date', '创建日期');
-
-  const SortOption(this.value, this.label);
-  final String value;
-  final String label;
-}
-
-// Sort direction
-enum SortDirection {
-  asc('asc', '升序'),
-  desc('desc', '降序');
-
-  const SortDirection(this.value, this.label);
-  final String value;
-  final String label;
-}
-
 // Works state
 class WorksState extends Equatable {
   final List<Work> works;
@@ -54,7 +33,7 @@ class WorksState extends Equatable {
   final int totalCount;
   final bool hasMore;
   final LayoutType layoutType;
-  final SortOption sortOption;
+  final SortOrder sortOption;
   final SortDirection sortDirection;
   final DisplayMode displayMode;
   final int subtitleFilter; // 0: 全部, 1: 仅带字幕
@@ -69,7 +48,7 @@ class WorksState extends Equatable {
     this.totalCount = 0,
     this.hasMore = true,
     this.layoutType = LayoutType.bigGrid, // 默认大网格布局
-    this.sortOption = SortOption.create_date,
+    this.sortOption = SortOrder.createDate,
     this.sortDirection = SortDirection.desc,
     this.displayMode = DisplayMode.all, // 默认显示全部作品
     this.subtitleFilter = 0, // 默认显示全部
@@ -85,7 +64,7 @@ class WorksState extends Equatable {
     int? totalCount,
     bool? hasMore,
     LayoutType? layoutType,
-    SortOption? sortOption,
+    SortOrder? sortOption,
     SortDirection? sortDirection,
     DisplayMode? displayMode,
     int? subtitleFilter,
@@ -264,7 +243,7 @@ class WorksNotifier extends StateNotifier<WorksState> {
     await loadWorks(targetPage: state.currentPage - 1);
   }
 
-  void setSortOption(SortOption option) {
+  void setSortOption(SortOrder option) {
     if (state.sortOption != option) {
       state = state.copyWith(sortOption: option);
       refresh();

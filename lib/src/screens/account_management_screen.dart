@@ -195,7 +195,7 @@ class _AccountManagementScreenState
                         leading: CircleAvatar(
                           backgroundColor: account.isActive
                               ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.surfaceVariant,
+                              : Theme.of(context).colorScheme.surfaceContainerHighest,
                           child: Icon(
                             account.isActive
                                 ? Icons.check_circle

@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/work.dart';
 import '../models/search_type.dart';
 import '../providers/auth_provider.dart';
-import '../widgets/work_card.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/va_chip.dart';
+import 'search_result_screen.dart';
 
 class SearchScreen extends ConsumerStatefulWidget {
   const SearchScreen({super.key});
@@ -18,9 +18,7 @@ class SearchScreen extends ConsumerStatefulWidget {
 
 class _SearchScreenState extends ConsumerState<SearchScreen> {
   final _searchController = TextEditingController();
-  final _scrollController = ScrollController();
 
-  List<Work> _works = [];
   List<Tag> _allTags = [];
   List<Va> _allVas = [];
   Tag? _selectedTag;
@@ -28,15 +26,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
   SearchType _searchType = SearchType.keyword;
 
-  bool _isLoading = false;
-  bool _hasMore = true;
-  int _currentPage = 1;
-  String? _errorMessage;
-
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
     _searchController.addListener(_onSearchTextChanged);
     _loadTagsAndVas();
   }
@@ -45,7 +37,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   void dispose() {
     _searchController.removeListener(_onSearchTextChanged);
     _searchController.dispose();
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -54,15 +45,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final text = _searchController.text.trim();
       if (text.length == 6 && int.tryParse(text) != null) {
         _search();
-      }
-    }
-  }
-
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      if (!_isLoading && _hasMore) {
-        _loadMore();
       }
     }
   }
@@ -84,83 +66,61 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  Future<void> _search({bool isNewSearch = true}) async {
-    if (_isLoading) return;
-
+  Future<void> _search() async {
     if (!_validateSearch()) return;
 
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-      if (isNewSearch) {
-        _works.clear();
-        _currentPage = 1;
-        _hasMore = true;
-      }
-    });
+    // 准备搜索参数
+    String keyword = '';
+    String searchTypeLabel = '';
+    Map<String, dynamic> searchParams = {};
 
-    try {
-      final apiService = ref.read(kikoeruApiServiceProvider);
-      Map<String, dynamic> result;
+    switch (_searchType) {
+      case SearchType.rjNumber:
+        keyword = _searchController.text.trim();
+        searchTypeLabel = 'RJ号';
+        searchParams = {'rjNumber': keyword};
+        break;
+      case SearchType.va:
+        if (_selectedVa == null) return;
+        keyword = _selectedVa!.name;
+        searchTypeLabel = '声优';
+        searchParams = {'vaId': _selectedVa!.id, 'vaName': _selectedVa!.name};
+        break;
+      case SearchType.tag:
+        if (_selectedTag == null) return;
+        keyword = _selectedTag!.name;
+        searchTypeLabel = '标签';
+        searchParams = {
+          'tagId': _selectedTag!.id,
+          'tagName': _selectedTag!.name
+        };
+        break;
+      case SearchType.keyword:
+      default:
+        keyword = _searchController.text.trim();
+        if (keyword.isEmpty) return;
+        searchTypeLabel = '关键词';
+        searchParams = {'keyword': keyword};
+        break;
+    }
 
-      switch (_searchType) {
-        case SearchType.rjNumber:
-          final rjNumber = _searchController.text.trim();
-          result = await apiService.searchWorks(
-              keyword: rjNumber, page: _currentPage);
-          break;
-        case SearchType.va:
-          if (_selectedVa == null) {
-            setState(() {
-              _isLoading = false;
-              _errorMessage = '请先选择声优';
-            });
-            return;
-          }
-          result = await apiService.getWorksByVa(
-              vaId: _selectedVa!.id, page: _currentPage);
-          break;
-        case SearchType.tag:
-          if (_selectedTag == null) {
-            setState(() {
-              _isLoading = false;
-              _errorMessage = '请先选择标签';
-            });
-            return;
-          }
-          result = await apiService.getWorksByTag(
-              tagId: _selectedTag!.id, page: _currentPage);
-          break;
-        case SearchType.keyword:
-        default:
-          final keyword = _searchController.text.trim();
-          result = await apiService.searchWorks(
-              keyword: keyword.isNotEmpty ? keyword : null, page: _currentPage);
-          break;
-      }
-
-      if (mounted) {
-        final works = (result['works'] as List)
-            .map((json) => Work.fromJson(json))
-            .toList();
-        setState(() {
-          if (isNewSearch) {
-            _works = works;
-          } else {
-            _works.addAll(works);
-          }
-          _hasMore = works.length >= 20;
-          _currentPage++;
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _errorMessage = '搜索失败: -Forcee';
-        });
-      }
+    // 跳转到搜索结果页面
+    print(
+        '[Search] Navigating to SearchResultScreen with keyword: $keyword, type: $searchTypeLabel');
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => SearchResultScreen(
+            keyword: keyword,
+            searchTypeLabel: searchTypeLabel,
+            searchParams: searchParams,
+          ),
+        ),
+      );
+      print('[Search] Navigation completed');
+    } else {
+      print('[Search] Widget not mounted, navigation skipped');
     }
   }
 
@@ -199,10 +159,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
     }
   }
 
-  Future<void> _loadMore() async {
-    await _search(isNewSearch: false);
-  }
-
   void _showSearchTypeDialog() {
     showDialog(
       context: context,
@@ -214,7 +170,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               setState(() {
                 _searchType = type;
                 _searchController.clear();
-                _works.clear();
                 _selectedTag = null;
                 _selectedVa = null;
               });
@@ -304,7 +259,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           onDeleted: () {
                             setState(() {
                               _selectedTag = null;
-                              _works.clear();
                             });
                           }),
                     if (_selectedVa != null)
@@ -313,14 +267,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                           onDeleted: () {
                             setState(() {
                               _selectedVa = null;
-                              _works.clear();
                             });
                           }),
                   ],
                 ),
               ),
             ),
-          Expanded(child: _buildBody()),
         ],
       ),
     );
@@ -389,57 +341,6 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 16)),
           onSubmitted: (_) => _search(),
         );
-    }
-  }
-
-  Widget _buildBody() {
-    if (_errorMessage != null) {
-      return Center(
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.error_outline,
-            size: 64, color: Theme.of(context).colorScheme.error),
-        const SizedBox(height: 16),
-        Text(_errorMessage!),
-        const SizedBox(height: 16),
-        ElevatedButton(onPressed: _search, child: const Text('重试'))
-      ]));
-    }
-    if (_works.isEmpty && !_isLoading) {
-      return Center(
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        const Icon(Icons.search, size: 64),
-        const SizedBox(height: 16),
-        Text(_getEmptyMessage())
-      ]));
-    }
-    return GridView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.all(8),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          childAspectRatio: 0.7,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8),
-      itemCount: _works.length + (_isLoading ? 2 : 0),
-      itemBuilder: (context, index) {
-        if (index >= _works.length)
-          return const Center(child: CircularProgressIndicator());
-        return WorkCard(work: _works[index]);
-      },
-    );
-  }
-
-  String _getEmptyMessage() {
-    switch (_searchType) {
-      case SearchType.rjNumber:
-        return '输入6位RJ号开始搜索';
-      case SearchType.va:
-        return '选择声优开始搜索';
-      case SearchType.tag:
-        return '选择标签开始搜索';
-      case SearchType.keyword:
-      default:
-        return '输入关键词开始搜索';
     }
   }
 }

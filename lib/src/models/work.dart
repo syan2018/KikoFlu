@@ -107,6 +107,8 @@ class Work extends Equatable {
 @JsonSerializable()
 class Circle extends Equatable {
   final int id;
+
+  @JsonKey(name: 'name')
   final String title;
 
   const Circle({required this.id, required this.title});

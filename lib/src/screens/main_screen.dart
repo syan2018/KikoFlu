@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/audio_provider.dart';
 import '../widgets/audio_player_widget.dart';
 import 'works_screen.dart';
-import 'search_screen.dart';
+import 'simple_search_screen.dart';
 import 'download_screen.dart';
 import 'settings_screen.dart';
 
@@ -20,7 +20,7 @@ class _MainScreenState extends ConsumerState<MainScreen> {
 
   final List<Widget> _screens = [
     const WorksScreen(),
-    const SearchScreen(),
+    const SimpleSearchScreen(),
     const DownloadScreen(),
     const SettingsScreen(),
   ];

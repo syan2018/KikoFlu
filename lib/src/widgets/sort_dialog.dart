@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/works_provider.dart';
+import '../models/sort_options.dart';
 
 class SortDialog extends ConsumerWidget {
   const SortDialog({super.key});
@@ -23,8 +24,8 @@ class SortDialog extends ConsumerWidget {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            ...SortOption.values.map((option) {
-              return RadioListTile<SortOption>(
+            ...SortOrder.values.map((option) {
+              return RadioListTile<SortOrder>(
                 title: Text(option.label),
                 value: option,
                 groupValue: worksState.sortOption,

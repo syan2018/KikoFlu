@@ -23,7 +23,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: ListTile(
               leading: const Icon(Icons.manage_accounts),
               title: const Text('账户管理'),
-              subtitle: const Text('管理多个账户,切换账户'),
+              subtitle: const Text('多账户管理,切换账户'),
               trailing: const Icon(Icons.arrow_forward_ios),
               onTap: () {
                 Navigator.of(context).push(

@@ -1,26 +1,17 @@
 enum SortOrder {
-  id('id', 'ID'),
+  createDate('create_date', '创建日期'),
   release('release', '发布日期'),
-  dlCount('dl_count', '下载量'),
-  price('price', '价格'),
-  rateCount('rate_count', '评分数'),
-  rating('rating', '评分'),
-  reviewCount('review_count', '评论数'),
-  title('title', '标题'),
+  rating('rate_average_2dp', '评分'),
+  review('review_count', '评论数'),
   randomSeed('random', '随机'),
+  dlCount('dl_count', '销量'),
+  price('price', '价格'),
   ;
 
   const SortOrder(this.value, this.label);
 
   final String value;
   final String label;
-
-  static SortOrder fromValue(String value) {
-    return SortOrder.values.firstWhere(
-      (order) => order.value == value,
-      orElse: () => SortOrder.id,
-    );
-  }
 }
 
 enum SortDirection {

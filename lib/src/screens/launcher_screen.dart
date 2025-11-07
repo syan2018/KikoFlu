@@ -66,7 +66,7 @@ class _LauncherScreenState extends ConsumerState<LauncherScreen> {
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(30),
                 ),
-                child: Icon(Icons.audiotrack, size: 60, color: Colors.white),
+                child: const Icon(Icons.audiotrack, size: 60, color: Colors.white),
               ),
               const SizedBox(height: 24),
 

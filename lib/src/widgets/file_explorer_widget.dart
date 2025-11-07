@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_pdfview/flutter_pdfview.dart';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/work.dart';
 import '../models/audio_track.dart';
@@ -25,8 +26,8 @@ class FileExplorerWidget extends ConsumerStatefulWidget {
 
 class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
   List<dynamic> _currentFiles = [];
-  List<List<dynamic>> _navigationHistory = [];
-  List<String> _pathHistory = [];
+  final List<List<dynamic>> _navigationHistory = [];
+  final List<String> _pathHistory = [];
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -46,8 +47,8 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
       final apiService = ref.read(kikoeruApiServiceProvider);
       final files = await apiService.getWorkTracks(widget.work.id);
 
-      // 保存文件列表到全局状态，供歌词查找使用
-      ref.read(fileListControllerProvider.notifier).updateFiles(files);
+      // 注意：不要在这里更新全局文件列表
+      // 只在播放音频时才更新，避免浏览其他作品时影响当前播放的歌词
 
       setState(() {
         _currentFiles = files;
@@ -86,10 +87,10 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     if (_pathHistory.isEmpty) {
       return '/';
     }
-    return '/' + _pathHistory.join('/');
+    return '/${_pathHistory.join('/')}';
   }
 
-  void _playAudioFile(dynamic audioFile) {
+  void _playAudioFile(dynamic audioFile) async {
     final authState = ref.read(authProvider);
     final host = authState.host ?? '';
     final token = authState.token ?? '';
@@ -108,6 +109,18 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     // 获取音频文件信息
     final hash = audioFile['hash'];
     final title = audioFile['title'] ?? audioFile['name'] ?? '未知';
+
+    // 获取当前作品的完整文件树（用于歌词查找）
+    try {
+      final apiService = ref.read(kikoeruApiServiceProvider);
+      final allFiles = await apiService.getWorkTracks(widget.work.id);
+
+      // 只在播放音频时更新全局文件列表，这样歌词才能正确关联
+      ref.read(fileListControllerProvider.notifier).updateFiles(allFiles);
+    } catch (e) {
+      print('获取完整文件树失败: $e');
+      // 即使获取失败也继续播放，只是可能没有歌词
+    }
 
     // 获取当前目录下所有音频文件
     final audioFiles = _getAudioFilesFromCurrentDirectory();
@@ -166,10 +179,10 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
 
     if (audioTracks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
+        const SnackBar(
           content: Text('没有找到可播放的音频文件'),
           backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
+          duration: Duration(seconds: 3),
         ),
       );
       return;
@@ -310,6 +323,19 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     return type == 'pdf' || title.endsWith('.pdf');
   }
 
+  // 判断是否是视频文件
+  bool _isVideoFile(dynamic file) {
+    final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
+    return title.endsWith('.mp4') ||
+        title.endsWith('.mkv') ||
+        title.endsWith('.avi') ||
+        title.endsWith('.mov') ||
+        title.endsWith('.wmv') ||
+        title.endsWith('.flv') ||
+        title.endsWith('.webm') ||
+        title.endsWith('.m4v');
+  }
+
   // 判断是否是字幕文件
   bool _isLyricFile(dynamic file) {
     final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
@@ -349,7 +375,7 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('确定要将以下文件加载为当前音频的字幕吗？'),
+            const Text('确定要将以下文件加载为当前音频的字幕吗？'),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(8),
@@ -618,6 +644,104 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     );
   }
 
+  // 使用系统播放器播放视频文件
+  Future<void> _playVideoWithSystemPlayer(dynamic videoFile) async {
+    final authState = ref.read(authProvider);
+    final host = authState.host ?? '';
+    final token = authState.token ?? '';
+    final hash = videoFile['hash'] ?? '';
+
+    if (host.isEmpty || token.isEmpty || hash.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('无法播放视频：缺少必要参数'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    String normalizedUrl = host;
+    if (!host.startsWith('http://') && !host.startsWith('https://')) {
+      normalizedUrl = 'https://$host';
+    }
+    final videoUrl = '$normalizedUrl/api/media/stream/$hash?token=$token';
+
+    try {
+      final uri = Uri.parse(videoUrl);
+      // 尝试使用系统默认方式打开
+      final canLaunch = await canLaunchUrl(uri);
+
+      if (canLaunch) {
+        // 先尝试外部应用模式
+        final launched = await launchUrl(
+          uri,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!launched && mounted) {
+          // 如果外部应用模式失败，尝试浏览器模式
+          await launchUrl(
+            uri,
+            mode: LaunchMode.externalNonBrowserApplication,
+          );
+        }
+      } else {
+        // 如果无法用 url_launcher 打开，显示提示
+
+        if (mounted) {
+          // 提供复制链接的选项
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('无法直接播放'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('系统无法找到支持的视频播放器。'),
+                  const SizedBox(height: 12),
+                  const Text('您可以：'),
+                  const Text('1. 复制链接到外部播放器（如MX Player、VLC）'),
+                  const Text('2. 在浏览器中打开'),
+                  const SizedBox(height: 12),
+                  SelectableText(
+                    videoUrl,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('关闭'),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    Navigator.pop(context);
+                    // 在浏览器中打开
+                    await launchUrl(uri, mode: LaunchMode.platformDefault);
+                  },
+                  child: const Text('在浏览器中打开'),
+                ),
+              ],
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('播放视频时出错: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -627,7 +751,7 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceVariant,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -742,9 +866,19 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
             ),
             trailing: isAudio
                 ? IconButton(
-                    onPressed: () => _playAudioFile(file),
-                    icon: const Icon(Icons.play_arrow),
-                    color: Colors.green,
+                    onPressed: () {
+                      if (_isVideoFile(file)) {
+                        // 视频文件使用系统播放器
+                        _playVideoWithSystemPlayer(file);
+                      } else {
+                        // 音频文件使用内置播放器
+                        _playAudioFile(file);
+                      }
+                    },
+                    icon: Icon(_isVideoFile(file)
+                        ? Icons.video_library
+                        : Icons.play_arrow),
+                    color: _isVideoFile(file) ? Colors.blue : Colors.green,
                   )
                 : (_isImageFile(file) || _isTextFile(file) || _isPdfFile(file))
                     ? Row(
@@ -779,6 +913,9 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
             onTap: () {
               if (isFolder) {
                 _navigateToFolder(file);
+              } else if (_isVideoFile(file)) {
+                // 视频文件使用系统播放器
+                _playVideoWithSystemPlayer(file);
               } else if (isAudio) {
                 _playAudioFile(file);
               } else if (_isImageFile(file)) {
@@ -862,7 +999,7 @@ class _ImageGalleryScreenState extends State<ImageGalleryScreen> {
       });
     } else {
       // 未放大，放大到2倍
-      final newScale = 2.0;
+      const newScale = 2.0;
       controller.value = Matrix4.identity()..scale(newScale);
       setState(() {
         _isScaled = true;
