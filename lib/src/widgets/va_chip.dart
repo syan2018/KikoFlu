@@ -6,6 +6,7 @@ class VaChip extends StatelessWidget {
   final Va va;
   final VoidCallback? onDeleted;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool compact;
   final double? fontSize;
   final EdgeInsetsGeometry? padding;
@@ -17,6 +18,7 @@ class VaChip extends StatelessWidget {
     required this.va,
     this.onDeleted,
     this.onTap,
+    this.onLongPress,
     this.compact = false,
     this.fontSize,
     this.padding,
@@ -44,6 +46,7 @@ class VaChip extends StatelessWidget {
                 ),
               );
             },
+        onLongPress: onLongPress,
         child: Container(
           padding:
               padding ?? const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

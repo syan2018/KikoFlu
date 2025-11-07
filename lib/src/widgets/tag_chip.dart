@@ -6,6 +6,7 @@ class TagChip extends StatelessWidget {
   final Tag tag;
   final VoidCallback? onDeleted;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool compact;
   final double? fontSize;
   final EdgeInsetsGeometry? padding;
@@ -17,6 +18,7 @@ class TagChip extends StatelessWidget {
     required this.tag,
     this.onDeleted,
     this.onTap,
+    this.onLongPress,
     this.compact = false,
     this.fontSize,
     this.padding,
@@ -44,6 +46,7 @@ class TagChip extends StatelessWidget {
                 ),
               );
             },
+        onLongPress: onLongPress,
         child: Container(
           padding:
               padding ?? const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

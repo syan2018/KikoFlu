@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/search_result_provider.dart';
 import '../widgets/works_grid_view.dart';
 import '../widgets/search_sort_dialog.dart';
+import '../widgets/global_audio_player_wrapper.dart';
 
 class SearchResultScreen extends ConsumerStatefulWidget {
   final String keyword;
@@ -114,70 +115,73 @@ class _SearchResultScreenState extends ConsumerState<SearchResultScreen> {
   Widget build(BuildContext context) {
     final searchState = ref.watch(searchResultProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 0,
-        actions: [
-          IconButton(
-            icon: _getLayoutIcon(searchState.layoutType),
-            iconSize: 22,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () =>
-                ref.read(searchResultProvider.notifier).toggleLayoutType(),
-            tooltip: _getLayoutTooltip(searchState.layoutType),
-          ),
-          IconButton(
-            icon: Icon(
-              searchState.subtitleFilter == 1
-                  ? Icons.closed_caption
-                  : Icons.closed_caption_disabled,
-              color: searchState.subtitleFilter == 1
-                  ? Theme.of(context).colorScheme.primary
-                  : null,
+    return GlobalAudioPlayerWrapper(
+      child: Scaffold(
+        appBar: AppBar(
+          titleSpacing: 0,
+          actions: [
+            IconButton(
+              icon: _getLayoutIcon(searchState.layoutType),
+              iconSize: 22,
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              onPressed: () =>
+                  ref.read(searchResultProvider.notifier).toggleLayoutType(),
+              tooltip: _getLayoutTooltip(searchState.layoutType),
             ),
-            iconSize: 22,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () =>
-                ref.read(searchResultProvider.notifier).toggleSubtitleFilter(),
-            tooltip: searchState.subtitleFilter == 1 ? '显示全部作品' : '仅显示带字幕作品',
-          ),
-          IconButton(
-            icon: const Icon(Icons.sort),
-            iconSize: 22,
-            padding: const EdgeInsets.all(8),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            onPressed: () => _showSortDialog(context),
-            tooltip: '排序',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          // 搜索信息行
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(
-                bottom: BorderSide(
-                  color: Theme.of(context).dividerColor,
-                  width: 1,
+            IconButton(
+              icon: Icon(
+                searchState.subtitleFilter == 1
+                    ? Icons.closed_caption
+                    : Icons.closed_caption_disabled,
+                color: searchState.subtitleFilter == 1
+                    ? Theme.of(context).colorScheme.primary
+                    : null,
+              ),
+              iconSize: 22,
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              onPressed: () => ref
+                  .read(searchResultProvider.notifier)
+                  .toggleSubtitleFilter(),
+              tooltip: searchState.subtitleFilter == 1 ? '显示全部作品' : '仅显示带字幕作品',
+            ),
+            IconButton(
+              icon: const Icon(Icons.sort),
+              iconSize: 22,
+              padding: const EdgeInsets.all(8),
+              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+              onPressed: () => _showSortDialog(context),
+              tooltip: '排序',
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            // 搜索信息行
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(
+                    color: Theme.of(context).dividerColor,
+                    width: 1,
+                  ),
                 ),
               ),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: _buildSearchInfo(context, searchState),
+              ),
             ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: _buildSearchInfo(context, searchState),
+            // 搜索结果内容
+            Expanded(
+              child: _buildBody(searchState),
             ),
-          ),
-          // 搜索结果内容
-          Expanded(
-            child: _buildBody(searchState),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

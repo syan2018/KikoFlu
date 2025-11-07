@@ -90,6 +90,25 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     return '/${_pathHistory.join('/')}';
   }
 
+  // 获取简化后的路径显示（用于UI显示）
+  String get _displayPath {
+    if (_pathHistory.isEmpty) {
+      return '/';
+    }
+
+    // 如果路径层级少于等于3层，直接显示完整路径
+    if (_pathHistory.length <= 3) {
+      return '/${_pathHistory.join('/')}';
+    }
+
+    // 路径太长时，显示：/第一层/.../倒数第二层/最后一层
+    final first = _pathHistory.first;
+    final secondLast = _pathHistory[_pathHistory.length - 2];
+    final last = _pathHistory.last;
+
+    return '/$first/.../$secondLast/$last';
+  }
+
   void _playAudioFile(dynamic audioFile) async {
     final authState = ref.read(authProvider);
     final host = authState.host ?? '';
@@ -764,10 +783,12 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
                 ),
               Expanded(
                 child: Text(
-                  _currentPath,
+                  _displayPath,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         fontFamily: 'monospace',
                       ),
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
                 ),
               ),
               IconButton(

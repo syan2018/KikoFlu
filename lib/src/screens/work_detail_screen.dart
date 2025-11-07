@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
@@ -67,6 +68,20 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
     }
   }
 
+  // 复制文本到剪贴板并显示提示
+  Future<void> _copyToClipboard(String text, String label) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已复制$label：$text'),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   Future<void> _loadWorkDetail() async {
     try {
       setState(() {
@@ -92,15 +107,21 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final work = _detailedWork ?? widget.work;
+
     return GlobalAudioPlayerWrapper(
       child: Scaffold(
         appBar: AppBar(
-          title: Text(
-            widget.work.title,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                ),
+          // RJ号作为标题，支持长按复制
+          title: GestureDetector(
+            onLongPress: () => _copyToClipboard('RJ${widget.work.id}', 'RJ号'),
+            child: Text(
+              'RJ${widget.work.id}',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+            ),
           ),
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -123,7 +144,7 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 封面图片 - Hero动画后等高清图完全加载再切换
+          // 封面图片 - 使用Stack叠加实现无感切换
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Hero(
@@ -137,47 +158,41 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
                   constraints: const BoxConstraints(
                     maxHeight: 500,
                   ),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 300),
-                    child: _showHDImage && _hdImageProvider != null
-                        ? Image(
-                            image: _hdImageProvider!,
-                            key: const ValueKey('hd_image'),
-                            fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Container(
-                                height: 300,
-                                color: Colors.grey[300],
-                                child: const Icon(
-                                  Icons.image_not_supported,
-                                  size: 64,
-                                  color: Colors.grey,
-                                ),
-                              );
-                            },
-                          )
-                        : CachedNetworkImage(
-                            imageUrl: work.getCoverImageUrl(host, token: token),
-                            key: const ValueKey('cached_image'),
-                            cacheKey: 'work_cover_${widget.work.id}',
-                            fit: BoxFit.cover,
-                            placeholder: (context, url) => Container(
-                              height: 300,
-                              color: Colors.grey[300],
-                              child: const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                            ),
-                            errorWidget: (context, url, error) => Container(
-                              height: 300,
-                              color: Colors.grey[300],
-                              child: const Icon(
-                                Icons.image_not_supported,
-                                size: 64,
-                                color: Colors.grey,
-                              ),
-                            ),
+                  child: Stack(
+                    fit: StackFit.passthrough,
+                    children: [
+                      // 底层：缓存图片，始终显示
+                      CachedNetworkImage(
+                        imageUrl: work.getCoverImageUrl(host, token: token),
+                        cacheKey: 'work_cover_${widget.work.id}',
+                        fit: BoxFit.cover,
+                        placeholder: (context, url) => Container(
+                          height: 300,
+                          color: Colors.grey[300],
+                          child: const Center(
+                            child: CircularProgressIndicator(),
                           ),
+                        ),
+                        errorWidget: (context, url, error) => Container(
+                          height: 300,
+                          color: Colors.grey[300],
+                          child: const Icon(
+                            Icons.image_not_supported,
+                            size: 64,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      // 顶层：高清图，加载完成后覆盖
+                      if (_showHDImage && _hdImageProvider != null)
+                        Image(
+                          image: _hdImageProvider!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return const SizedBox.shrink(); // 出错时不显示，保持底层缓存图
+                          },
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -189,12 +204,33 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  work.title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
+                // 标题 + 字幕图标 - 长按标题复制
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onLongPress: () => _copyToClipboard(work.title, '标题'),
+                        child: Text(
+                          work.title,
+                          style:
+                              Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                        ),
                       ),
+                    ),
+                    // 字幕图标紧跟标题
+                    if (work.hasSubtitle == true) ...[
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.closed_caption,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 20,
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 8),
 
@@ -305,53 +341,13 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
 
                 const SizedBox(height: 16),
 
-                // 标题和RJ号
-
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        'RJ${work.id}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // 字幕标签
-                    if (work.hasSubtitle == true)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.primary,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Icon(
-                          Icons.closed_caption,
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          size: 20,
-                        ),
-                      ),
-                  ],
-                ),
-
-                const SizedBox(height: 16),
-
                 // 声优信息
                 if (work.vas != null && work.vas!.isNotEmpty) ...[
                   Text(
                     '声优',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
                   ),
                   const SizedBox(height: 8),
@@ -361,11 +357,12 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
                     children: work.vas!.map((va) {
                       return VaChip(
                         va: va,
-                        fontSize: 14,
+                        fontSize: 12,
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                            horizontal: 8, vertical: 4),
                         borderRadius: 6,
                         fontWeight: FontWeight.w500,
+                        onLongPress: () => _copyToClipboard(va.name, '声优'),
                       );
                     }).toList(),
                   ),
@@ -376,8 +373,9 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
                 if (work.tags != null && work.tags!.isNotEmpty) ...[
                   Text(
                     '标签',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
                           fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
                   ),
                   const SizedBox(height: 8),
@@ -387,11 +385,13 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
                     children: work.tags!
                         .map((tag) => TagChip(
                               tag: tag,
-                              fontSize: 14,
+                              fontSize: 12,
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 6),
+                                  horizontal: 8, vertical: 4),
                               borderRadius: 6,
                               fontWeight: FontWeight.w500,
+                              onLongPress: () =>
+                                  _copyToClipboard(tag.name, '标签'),
                             ))
                         .toList(),
                   ),
@@ -404,12 +404,15 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
                     '发布日期',
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.bold,
+                          fontSize: 14,
                         ),
                   ),
                   const SizedBox(height: 8),
                   Text(
                     work.release!.split('T')[0],
-                    style: Theme.of(context).textTheme.bodyMedium,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: 14,
+                        ),
                   ),
                   const SizedBox(height: 24),
                 ],
@@ -419,6 +422,7 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
                   '资源文件',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                         fontWeight: FontWeight.bold,
+                        fontSize: 14,
                       ),
                 ),
                 const SizedBox(height: 8),
