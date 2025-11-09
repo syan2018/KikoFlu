@@ -10,7 +10,7 @@ class CacheService {
 
   // 缓存大小上限配置键
   static const String cacheSizeLimitKey = 'cache_size_limit_mb';
-  static const int defaultCacheSizeLimitMB = 1024; // 默认1GB (1024MB)
+  static const int defaultCacheSizeLimitMB = 1000; // 默认1GB (1000MB)
 
   // 自动清理检查间隔（避免过于频繁检查）
   static const Duration autoCleanCheckInterval = Duration(minutes: 5);
