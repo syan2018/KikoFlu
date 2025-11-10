@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 
 import '../models/lyric.dart';
 import '../models/audio_track.dart';
+import '../services/cache_service.dart';
 import 'auth_provider.dart';
 import 'audio_provider.dart';
 
@@ -60,8 +61,9 @@ class LyricController extends StateNotifier<LyricState> {
       final host = authState.host ?? '';
       final token = authState.token ?? '';
       final hash = lyricFile['hash'];
+      final workId = track.workId;
 
-      if (hash == null || host.isEmpty) {
+      if (hash == null || host.isEmpty || workId == null) {
         state = LyricState(lyrics: [], isLoading: false);
         return;
       }
@@ -73,31 +75,55 @@ class LyricController extends StateNotifier<LyricState> {
       }
       final lyricUrl = '$normalizedUrl/api/media/stream/$hash?token=$token';
 
-      // 下载并解析歌词
-      final dio = Dio();
-      final response = await dio.get(
-        lyricUrl,
-        options: Options(
-          responseType: ResponseType.plain,
-          receiveTimeout: const Duration(seconds: 30),
-        ),
+      String? content;
+
+      // 1. 先尝试从缓存加载（包括下载文件和缓存文件）
+      final cachedContent = await CacheService.getCachedTextContent(
+        workId: workId,
+        hash: hash,
       );
 
-      if (response.statusCode == 200) {
-        final content = response.data as String;
-        final lyrics = LyricParser.parse(content); // 自动检测格式
-        state = LyricState(
-          lyrics: lyrics,
-          isLoading: false,
-          lyricUrl: lyricUrl,
-        );
+      if (cachedContent != null) {
+        print('[Lyric] 从缓存加载歌词: $hash');
+        content = cachedContent;
       } else {
-        state = LyricState(
-          lyrics: [],
-          isLoading: false,
-          error: 'HTTP ${response.statusCode}',
+        // 2. 缓存未命中，从网络下载
+        print('[Lyric] 从网络下载歌词: $hash');
+        final dio = Dio();
+        final response = await dio.get(
+          lyricUrl,
+          options: Options(
+            responseType: ResponseType.plain,
+            receiveTimeout: const Duration(seconds: 30),
+          ),
         );
+
+        if (response.statusCode == 200) {
+          content = response.data as String;
+
+          // 3. 缓存歌词内容
+          await CacheService.cacheTextContent(
+            workId: workId,
+            hash: hash,
+            content: content,
+          );
+        } else {
+          state = LyricState(
+            lyrics: [],
+            isLoading: false,
+            error: 'HTTP ${response.statusCode}',
+          );
+          return;
+        }
       }
+
+      // 4. 解析歌词
+      final lyrics = LyricParser.parse(content); // 自动检测格式
+      state = LyricState(
+        lyrics: lyrics,
+        isLoading: false,
+        lyricUrl: lyricUrl,
+      );
     } catch (e) {
       state = LyricState(
         lyrics: [],

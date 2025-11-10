@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:path_provider/path_provider.dart';
 import 'storage_service.dart';
+import 'download_service.dart';
+import '../models/download_task.dart';
 
 class CacheService {
   // 缓存时长（过期后自动删除）
@@ -226,6 +228,14 @@ class CacheService {
   // 获取缓存的音频文件（基于 hash）
   static Future<String?> getCachedAudioFile(String hash) async {
     try {
+      // 1. 先检查下载文件（优先级最高，因为是用户主动下载的）
+      final downloadedFile = await _getDownloadedAudioFile(hash);
+      if (downloadedFile != null) {
+        print('[Cache] 使用已下载的音频文件: $hash');
+        return downloadedFile;
+      }
+
+      // 2. 检查缓存文件
       final finalFile = await _audioFinalFile(hash);
       final tempFile = await _audioTempFile(hash);
 
@@ -281,6 +291,14 @@ class CacheService {
     required Dio dio,
   }) async {
     try {
+      // 1. 先检查下载文件
+      final downloadedFile = await _getDownloadedFile(workId, hash);
+      if (downloadedFile != null) {
+        print('[Cache] 使用已下载的文件: $hash');
+        return downloadedFile;
+      }
+
+      // 2. 检查缓存文件
       final cacheDir = await _getCacheDirectory();
       // 使用 hash 作为文件名（替换路径分隔符为下划线）
       final safeHash = hash.replaceAll('/', '_');
@@ -387,6 +405,17 @@ class CacheService {
     required String hash,
   }) async {
     try {
+      // 1. 先检查下载文件
+      final downloadedFile = await _getDownloadedFile(workId, hash);
+      if (downloadedFile != null) {
+        final file = File(downloadedFile);
+        if (await file.exists()) {
+          print('[Cache] 从已下载的文件读取文本内容: $hash');
+          return await file.readAsString();
+        }
+      }
+
+      // 2. 检查缓存文件
       final cacheDir = await _getCacheDirectory();
       final safeHash = hash.replaceAll('/', '_');
       final fileName = '${workId}_${safeHash}_text.txt';
@@ -941,6 +970,55 @@ class CacheService {
       }
     } catch (e) {
       print('[Cache] 删除元数据失败: $e');
+    }
+  }
+
+  // 从下载服务中获取已下载的音频文件
+  static Future<String?> _getDownloadedAudioFile(String hash) async {
+    try {
+      final downloadService = DownloadService.instance;
+      final tasks = downloadService.tasks;
+
+      // 查找已完成的下载任务
+      for (final task in tasks) {
+        if (task.hash == hash && task.status == DownloadStatus.completed) {
+          final filePath = await downloadService.getDownloadedFilePath(
+            task.workId,
+            hash,
+          );
+          if (filePath != null) {
+            final file = File(filePath);
+            if (await file.exists()) {
+              return filePath;
+            }
+          }
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print('[Cache] 获取下载文件失败: $e');
+      return null;
+    }
+  }
+
+  // 从下载服务中获取已下载的文件（通用）
+  static Future<String?> _getDownloadedFile(int workId, String hash) async {
+    try {
+      final downloadService = DownloadService.instance;
+      final filePath =
+          await downloadService.getDownloadedFilePath(workId, hash);
+      if (filePath != null) {
+        final file = File(filePath);
+        if (await file.exists()) {
+          return filePath;
+        }
+      }
+
+      return null;
+    } catch (e) {
+      print('[Cache] 获取下载文件失败: $e');
+      return null;
     }
   }
 

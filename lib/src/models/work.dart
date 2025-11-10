@@ -167,7 +167,19 @@ class AudioFile extends Equatable {
   final String? hash;
   final List<AudioFile>? children;
 
-  const AudioFile({required this.title, this.type, this.hash, this.children});
+  @JsonKey(name: 'mediaDownloadUrl')
+  final String? mediaDownloadUrl;
+
+  final int? size;
+
+  const AudioFile({
+    required this.title,
+    this.type,
+    this.hash,
+    this.children,
+    this.mediaDownloadUrl,
+    this.size,
+  });
 
   factory AudioFile.fromJson(Map<String, dynamic> json) =>
       _$AudioFileFromJson(json);
@@ -180,5 +192,6 @@ class AudioFile extends Equatable {
   bool get isImage => type == 'image';
 
   @override
-  List<Object?> get props => [title, type, hash, children];
+  List<Object?> get props =>
+      [title, type, hash, children, mediaDownloadUrl, size];
 }

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'account_management_screen.dart';
+import 'downloads_screen.dart';
+import 'theme_settings_screen.dart';
 import '../services/cache_service.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -64,22 +66,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             child: Column(
               children: [
                 ListTile(
-                  leading: const Icon(Icons.palette),
-                  title: const Text('主题设置'),
-                  subtitle: const Text('深色模式、主题色等'),
+                  leading: const Icon(Icons.download),
+                  title: const Text('下载管理'),
+                  subtitle: const Text('查看和管理下载任务'),
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () {
-                    // TODO: Navigate to theme settings
-                  },
-                ),
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.language),
-                  title: const Text('语言设置'),
-                  subtitle: const Text('界面语言'),
-                  trailing: const Icon(Icons.arrow_forward_ios),
-                  onTap: () {
-                    // TODO: Navigate to language settings
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const DownloadsScreen(),
+                      ),
+                    );
                   },
                 ),
                 const Divider(),
@@ -90,6 +86,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                   trailing: const Icon(Icons.arrow_forward_ios),
                   onTap: () {
                     _showCacheManagementDialog();
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.palette),
+                  title: const Text('主题设置'),
+                  subtitle: const Text('深色模式、主题色等'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const ThemeSettingsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.language),
+                  title: const Text('语言设置'),
+                  subtitle: const Text('界面语言'),
+                  trailing: const Icon(Icons.arrow_forward_ios),
+                  onTap: () {
+                    // TODO: Navigate to language settings
                   },
                 ),
                 const Divider(),

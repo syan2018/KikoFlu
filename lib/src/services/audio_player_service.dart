@@ -82,7 +82,6 @@ class AudioPlayerService {
             MediaControl.skipToPrevious,
             if (playing) MediaControl.pause else MediaControl.play,
             MediaControl.skipToNext,
-            MediaControl.stop,
           ],
           systemActions: const {
             MediaAction.seek,

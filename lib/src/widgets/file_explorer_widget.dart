@@ -12,6 +12,8 @@ import '../providers/auth_provider.dart';
 import '../providers/audio_provider.dart';
 import '../providers/lyric_provider.dart';
 import '../services/cache_service.dart';
+import '../services/download_service.dart';
+import '../utils/file_icon_utils.dart';
 
 class FileExplorerWidget extends ConsumerStatefulWidget {
   final Work work;
@@ -28,6 +30,7 @@ class FileExplorerWidget extends ConsumerStatefulWidget {
 class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
   List<dynamic> _rootFiles = [];
   final Set<String> _expandedFolders = {}; // 记录展开的文件夹路径
+  final Map<String, bool> _downloadedFiles = {}; // hash -> downloaded
   bool _isLoading = false;
   String? _errorMessage;
   String? _mainFolderPath; // 主文件夹路径
@@ -57,11 +60,47 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
         // 识别主文件夹并自动展开
         _identifyAndExpandMainFolder();
       });
+
+      // 检查已下载的文件
+      _checkDownloadedFiles();
     } catch (e) {
       setState(() {
         _errorMessage = '加载文件失败: $e';
         _isLoading = false;
       });
+    }
+  }
+
+  // 检查已下载的文件
+  Future<void> _checkDownloadedFiles() async {
+    final downloadService = DownloadService.instance;
+
+    void collectHashes(List<dynamic> items) {
+      for (final item in items) {
+        final type = item['type'] ?? '';
+        // 收集所有文件类型的hash（除了文件夹）
+        if (type != 'folder' && item['hash'] != null) {
+          _downloadedFiles[item['hash']] = false;
+        }
+        final children = item['children'] as List<dynamic>?;
+        if (children != null) {
+          collectHashes(children);
+        }
+      }
+    }
+
+    collectHashes(_rootFiles);
+
+    for (final hash in _downloadedFiles.keys) {
+      final filePath =
+          await downloadService.getDownloadedFilePath(widget.work.id, hash);
+      if (filePath != null) {
+        _downloadedFiles[hash] = true;
+      }
+    }
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -148,7 +187,7 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     for (final child in items) {
       if (child['type'] == 'audio') {
         audioCount++;
-      } else if (_isTextFile(child)) {
+      } else if (FileIconUtils.isTextFile(child)) {
         textCount++;
       }
       // 不再递归统计子文件夹中的文件
@@ -193,7 +232,7 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     return parentPath.isEmpty ? title : '$parentPath/$title';
   }
 
-  void _playAudioFile(dynamic audioFile) async {
+  void _playAudioFile(dynamic audioFile, String parentPath) async {
     final authState = ref.read(authProvider);
     final host = authState.host ?? '';
     final token = authState.token ?? '';
@@ -225,8 +264,8 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
       // 即使获取失败也继续播放，只是可能没有歌词
     }
 
-    // 获取当前目录下所有音频文件
-    final audioFiles = _getAudioFilesFromCurrentDirectory();
+    // 获取同一目录下的所有音频文件
+    final audioFiles = _getAudioFilesFromSameDirectory(parentPath);
     final currentIndex = audioFiles.indexWhere((file) => file['hash'] == hash);
 
     if (currentIndex == -1) {
@@ -316,118 +355,51 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
     );
   }
 
-  // 获取当前目录下所有音频文件（递归遍历整个树）
-  List<dynamic> _getAudioFilesFromCurrentDirectory() {
+  // 获取同一目录下的所有音频文件（不递归子文件夹）
+  List<dynamic> _getAudioFilesFromSameDirectory(String targetPath) {
     final List<dynamic> audioFiles = [];
 
-    void extractAudioFiles(List<dynamic> items) {
-      for (final item in items) {
+    // 如果是根目录
+    if (targetPath.isEmpty) {
+      for (final item in _rootFiles) {
         if (item['type'] == 'audio') {
           audioFiles.add(item);
-        } else if (item['type'] == 'folder' && item['children'] != null) {
-          extractAudioFiles(item['children']);
+        }
+      }
+      return audioFiles;
+    }
+
+    // 查找目标路径对应的文件夹
+    List<dynamic>? findFolderByPath(List<dynamic> items, String currentPath) {
+      for (final item in items) {
+        if (item['type'] == 'folder') {
+          final itemPath = _getItemPath(currentPath, item);
+
+          if (itemPath == targetPath) {
+            // 找到目标文件夹，返回其子项
+            return item['children'] as List<dynamic>?;
+          }
+
+          // 继续在子文件夹中查找
+          if (item['children'] != null) {
+            final result = findFolderByPath(item['children'], itemPath);
+            if (result != null) return result;
+          }
+        }
+      }
+      return null;
+    }
+
+    final folderContents = findFolderByPath(_rootFiles, '');
+    if (folderContents != null) {
+      for (final item in folderContents) {
+        if (item['type'] == 'audio') {
+          audioFiles.add(item);
         }
       }
     }
 
-    if (_rootFiles.isNotEmpty) {
-      extractAudioFiles(_rootFiles);
-    }
-
     return audioFiles;
-  }
-
-  IconData _getFileIcon(dynamic file) {
-    final type = file['type'] ?? '';
-    final title = file['title'] ?? file['name'] ?? '';
-
-    if (type == 'folder') {
-      return Icons.folder;
-    } else if (type == 'audio') {
-      if (title.toLowerCase().endsWith('.mp4')) {
-        return Icons.video_library;
-      }
-      return Icons.audiotrack;
-    } else if (type == 'image' || _isImageFile(file)) {
-      return Icons.image;
-    } else if (type == 'text' || _isTextFile(file)) {
-      return Icons.text_snippet;
-    } else if (type == 'pdf' || _isPdfFile(file)) {
-      return Icons.picture_as_pdf;
-    } else {
-      return Icons.insert_drive_file;
-    }
-  }
-
-  Color _getFileIconColor(dynamic file) {
-    final type = file['type'] ?? '';
-
-    if (type == 'folder') {
-      return Colors.amber;
-    } else if (type == 'audio') {
-      return Colors.green;
-    } else if (type == 'image' || _isImageFile(file)) {
-      return Colors.blue;
-    } else if (type == 'text' || _isTextFile(file)) {
-      return Colors.grey;
-    } else if (type == 'pdf' || _isPdfFile(file)) {
-      return Colors.red;
-    } else {
-      return Colors.grey;
-    }
-  }
-
-  bool _isImageFile(dynamic file) {
-    final type = file['type'] ?? '';
-    final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
-    return type == 'image' ||
-        title.endsWith('.jpg') ||
-        title.endsWith('.jpeg') ||
-        title.endsWith('.png') ||
-        title.endsWith('.gif') ||
-        title.endsWith('.bmp') ||
-        title.endsWith('.webp');
-  }
-
-  bool _isTextFile(dynamic file) {
-    final type = file['type'] ?? '';
-    final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
-    return type == 'text' ||
-        title.endsWith('.txt') ||
-        title.endsWith('.vtt') ||
-        title.endsWith('.srt') ||
-        title.endsWith('.md') ||
-        title.endsWith('.log') ||
-        title.endsWith('.json') ||
-        title.endsWith('.xml');
-  }
-
-  bool _isPdfFile(dynamic file) {
-    final type = file['type'] ?? '';
-    final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
-    return type == 'pdf' || title.endsWith('.pdf');
-  }
-
-  // 判断是否是视频文件
-  bool _isVideoFile(dynamic file) {
-    final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
-    return title.endsWith('.mp4') ||
-        title.endsWith('.mkv') ||
-        title.endsWith('.avi') ||
-        title.endsWith('.mov') ||
-        title.endsWith('.wmv') ||
-        title.endsWith('.flv') ||
-        title.endsWith('.webm') ||
-        title.endsWith('.m4v');
-  }
-
-  // 判断是否是字幕文件
-  bool _isLyricFile(dynamic file) {
-    final title = (file['title'] ?? file['name'] ?? '').toLowerCase();
-    return title.endsWith('.vtt') ||
-        title.endsWith('.srt') ||
-        title.endsWith('.lrc') ||
-        title.endsWith('.txt');
   }
 
   // 手动加载字幕
@@ -653,7 +625,7 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
 
     void extractImageFiles(List<dynamic> items) {
       for (final item in items) {
-        if (_isImageFile(item)) {
+        if (FileIconUtils.isImageFile(item)) {
           imageFiles.add(item);
         } else if (item['type'] == 'folder' && item['children'] != null) {
           extractImageFiles(item['children']);
@@ -918,7 +890,7 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
               _toggleFolder(itemPath);
             } else {
               // 文件点击处理
-              _handleFileTap(item, title);
+              _handleFileTap(item, title, parentPath);
             }
           },
           child: Padding(
@@ -941,20 +913,54 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
                 else
                   const SizedBox(width: 20),
                 const SizedBox(width: 8),
-                // 文件图标
-                Icon(
-                  _getFileIcon(item),
-                  color: _getFileIconColor(item),
-                  size: 24,
+                // 文件图标（带已下载徽章）
+                SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: Stack(
+                    children: [
+                      Icon(
+                        FileIconUtils.getFileIconFromMap(item),
+                        color: FileIconUtils.getFileIconColorFromMap(item),
+                        size: 24,
+                      ),
+                      // 已下载徽章
+                      if (type != 'folder' &&
+                          item['hash'] != null &&
+                          (_downloadedFiles[item['hash']] ?? false))
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.check_circle,
+                              color: Colors.green[600],
+                              size: 13,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
                 const SizedBox(width: 12),
-                // 文件名
+                // 文件名（已下载文件带遮罩）
                 Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
+                  child: Opacity(
+                    opacity: type != 'folder' &&
+                            item['hash'] != null &&
+                            (_downloadedFiles[item['hash']] ?? false)
+                        ? 0.5
+                        : 1.0,
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                      ),
                     ),
                   ),
                 ),
@@ -962,25 +968,29 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
                 if (type == 'audio')
                   IconButton(
                     onPressed: () {
-                      if (_isVideoFile(item)) {
+                      if (FileIconUtils.isVideoFile(item)) {
                         _playVideoWithSystemPlayer(item);
                       } else {
-                        _playAudioFile(item);
+                        _playAudioFile(item, parentPath);
                       }
                     },
-                    icon: Icon(_isVideoFile(item)
+                    icon: Icon(FileIconUtils.isVideoFile(item)
                         ? Icons.video_library
                         : Icons.play_arrow),
-                    color: _isVideoFile(item) ? Colors.blue : Colors.green,
+                    color: FileIconUtils.isVideoFile(item)
+                        ? Colors.blue
+                        : Colors.green,
                     iconSize: 20,
                   )
-                else if (_isImageFile(item) ||
-                    _isTextFile(item) ||
-                    _isPdfFile(item))
+                else if (FileIconUtils.isImageFile(item) ||
+                    FileIconUtils.isTextFile(item) ||
+                    FileIconUtils.isPdfFile(item))
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (_isTextFile(item) && _isLyricFile(item))
+                      if (FileIconUtils.isTextFile(item) &&
+                          FileIconUtils.isLyricFile(
+                              item['title'] ?? item['name'] ?? ''))
                         IconButton(
                           onPressed: () => _loadLyricManually(item),
                           icon: const Icon(Icons.subtitles),
@@ -990,9 +1000,9 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
                         ),
                       IconButton(
                         onPressed: () {
-                          if (_isImageFile(item)) {
+                          if (FileIconUtils.isImageFile(item)) {
                             _previewImageFile(item);
-                          } else if (_isPdfFile(item)) {
+                          } else if (FileIconUtils.isPdfFile(item)) {
                             _previewPdfFile(item);
                           } else {
                             _previewTextFile(item);
@@ -1029,16 +1039,16 @@ class _FileExplorerWidgetState extends ConsumerState<FileExplorerWidget> {
   }
 
   // 处理文件点击
-  void _handleFileTap(dynamic file, String title) {
-    if (_isVideoFile(file)) {
+  void _handleFileTap(dynamic file, String title, String parentPath) {
+    if (FileIconUtils.isVideoFile(file)) {
       _playVideoWithSystemPlayer(file);
     } else if (file['type'] == 'audio') {
-      _playAudioFile(file);
-    } else if (_isImageFile(file)) {
+      _playAudioFile(file, parentPath);
+    } else if (FileIconUtils.isImageFile(file)) {
       _previewImageFile(file);
-    } else if (_isPdfFile(file)) {
+    } else if (FileIconUtils.isPdfFile(file)) {
       _previewPdfFile(file);
-    } else if (_isTextFile(file)) {
+    } else if (FileIconUtils.isTextFile(file)) {
       _previewTextFile(file);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(

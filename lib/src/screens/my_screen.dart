@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import '../providers/my_reviews_provider.dart';
 import '../widgets/enhanced_work_card.dart';
+import 'downloads_screen.dart';
 export '../providers/my_reviews_provider.dart' show MyReviewLayoutType;
 
 class MyScreen extends ConsumerStatefulWidget {
@@ -63,6 +64,14 @@ class _MyScreenState extends ConsumerState<MyScreen>
         curve: Curves.easeInOut,
       );
     }
+  }
+
+  void _navigateToDownloads() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const DownloadsScreen(),
+      ),
+    );
   }
 
   // 分页控制栏
@@ -440,6 +449,15 @@ class _MyScreenState extends ConsumerState<MyScreen>
                     ],
                   ),
                 ),
+              ),
+              // 下载管理按钮
+              IconButton(
+                icon: const Icon(Icons.download),
+                iconSize: 22,
+                padding: const EdgeInsets.all(8),
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                onPressed: _navigateToDownloads,
+                tooltip: '下载管理',
               ),
               // 第二列：布局切换按钮
               IconButton(

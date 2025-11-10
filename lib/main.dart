@@ -9,7 +9,9 @@ import 'src/utils/theme.dart';
 import 'src/services/storage_service.dart';
 import 'src/services/account_database.dart';
 import 'src/services/cache_service.dart';
+import 'src/services/download_service.dart';
 import 'src/providers/audio_provider.dart';
+import 'src/providers/theme_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,6 +27,9 @@ void main() async {
   CacheService.checkAndCleanCache(force: true).catchError((e) {
     print('[Cache] 启动时检查缓存失败: $e');
   });
+
+  // 初始化下载服务
+  await DownloadService.instance.initialize();
 
   // Set system UI overlay style
   SystemChrome.setSystemUIOverlayStyle(
@@ -56,14 +61,33 @@ class _KikoeruAppState extends ConsumerState<KikoeruApp> {
 
   @override
   Widget build(BuildContext context) {
+    final themeSettings = ref.watch(themeSettingsProvider);
+
     return DynamicColorBuilder(
       builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+        // 根据用户设置决定是否使用动态颜色
+        final ColorScheme? lightScheme =
+            themeSettings.colorSchemeType == ColorSchemeType.dynamic
+                ? lightDynamic
+                : null;
+        final ColorScheme? darkScheme =
+            themeSettings.colorSchemeType == ColorSchemeType.dynamic
+                ? darkDynamic
+                : null;
+
+        // 根据用户设置决定主题模式
+        final ThemeMode mode = switch (themeSettings.themeMode) {
+          AppThemeMode.system => ThemeMode.system,
+          AppThemeMode.light => ThemeMode.light,
+          AppThemeMode.dark => ThemeMode.dark,
+        };
+
         return MaterialApp(
           title: 'Kikoeru',
           debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme(lightDynamic),
-          darkTheme: AppTheme.darkTheme(darkDynamic),
-          themeMode: ThemeMode.system,
+          theme: AppTheme.lightTheme(lightScheme),
+          darkTheme: AppTheme.darkTheme(darkScheme),
+          themeMode: mode,
           home: const LauncherScreen(),
         );
       },

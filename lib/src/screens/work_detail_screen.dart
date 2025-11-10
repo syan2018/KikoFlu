@@ -8,6 +8,7 @@ import '../providers/auth_provider.dart';
 import '../providers/my_reviews_provider.dart';
 import '../services/storage_service.dart';
 import '../widgets/file_explorer_widget.dart';
+import '../widgets/file_selection_dialog.dart';
 import '../widgets/global_audio_player_wrapper.dart';
 import '../widgets/tag_chip.dart';
 import '../widgets/va_chip.dart';
@@ -85,6 +86,132 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
         ),
       );
     }
+  }
+
+  // 显示文件选择对话框
+  Future<void> _showFileSelectionDialog() async {
+    // 显示加载对话框
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(),
+                SizedBox(height: 16),
+                Text('正在加载文件列表...'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      // 获取文件树
+      final apiService = ref.read(kikoeruApiServiceProvider);
+      final files = await apiService.getWorkTracks(widget.work.id);
+
+      if (!mounted) return;
+
+      // 关闭加载对话框
+      Navigator.of(context).pop();
+
+      // 将文件列表转换为 AudioFile 对象
+      final audioFiles = _convertToAudioFiles(files);
+
+      // 创建临时的 Work 对象用于文件选择
+      final baseWork = _detailedWork ?? widget.work;
+      final work = Work(
+        id: baseWork.id,
+        title: baseWork.title,
+        circleId: baseWork.circleId,
+        name: baseWork.name,
+        vas: baseWork.vas,
+        tags: baseWork.tags,
+        age: baseWork.age,
+        release: baseWork.release,
+        dlCount: baseWork.dlCount,
+        price: baseWork.price,
+        reviewCount: baseWork.reviewCount,
+        rateCount: baseWork.rateCount,
+        rateAverage: baseWork.rateAverage,
+        hasSubtitle: baseWork.hasSubtitle,
+        duration: baseWork.duration,
+        progress: baseWork.progress,
+        images: baseWork.images,
+        description: baseWork.description,
+        children: audioFiles,
+      );
+
+      // 显示文件选择对话框
+      showDialog(
+        context: context,
+        builder: (context) => FileSelectionDialog(work: work),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      // 关闭加载对话框
+      Navigator.of(context).pop();
+
+      // 显示错误提示
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('加载文件列表失败: $e')),
+      );
+    }
+  }
+
+  // 将 API 返回的文件列表转换为 AudioFile 对象
+  List<AudioFile> _convertToAudioFiles(List<dynamic> files) {
+    final authState = ref.read(authProvider);
+    final host = authState.host ?? '';
+    final token = authState.token ?? '';
+
+    // 标准化 host URL
+    String normalizedHost = host;
+    if (host.isNotEmpty &&
+        !host.startsWith('http://') &&
+        !host.startsWith('https://')) {
+      normalizedHost = 'https://$host';
+    }
+
+    return files.map((file) {
+      final type = file['type'] as String?;
+      final title = file['title'] as String? ?? file['name'] as String? ?? '';
+      final hash = file['hash'] as String?;
+      final size = file['size'] as int?;
+
+      // 构建下载 URL
+      String? downloadUrl;
+      if (file['mediaStreamUrl'] != null &&
+          file['mediaStreamUrl'].toString().isNotEmpty) {
+        downloadUrl = file['mediaStreamUrl'];
+      } else if (normalizedHost.isNotEmpty &&
+          hash != null &&
+          type != 'folder') {
+        downloadUrl = '$normalizedHost/api/media/stream/$hash?token=$token';
+      }
+
+      List<AudioFile>? children;
+      if (file['children'] != null && file['children'] is List) {
+        children = _convertToAudioFiles(file['children'] as List<dynamic>);
+      }
+
+      // API 返回的 type 是 'audio' 而不是 'file'
+      return AudioFile(
+        title: title,
+        hash: hash,
+        type: type == 'folder' ? 'folder' : 'file', // 将 'audio' 等类型统一转为 'file'
+        children: children,
+        size: size,
+        mediaDownloadUrl: downloadUrl,
+      );
+    }).toList();
   }
 
   Future<void> _loadWorkDetail() async {
@@ -358,6 +485,12 @@ class _WorkDetailScreenState extends ConsumerState<WorkDetailScreen> {
           backgroundColor: Colors.transparent,
           elevation: 0,
           actions: [
+            // 下载按钮
+            IconButton(
+              icon: const Icon(Icons.download),
+              onPressed: _showFileSelectionDialog,
+              tooltip: '下载',
+            ),
             // 收藏状态按钮 - 带图标和文字
             Padding(
               padding: const EdgeInsets.only(right: 8),
