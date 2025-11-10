@@ -4,13 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
-import 'src/screens/launcher_screen.dart';
+import 'src/screens/login_screen.dart';
+import 'src/screens/main_screen.dart';
 import 'src/utils/theme.dart';
 import 'src/services/storage_service.dart';
 import 'src/services/account_database.dart';
 import 'src/services/cache_service.dart';
 import 'src/services/download_service.dart';
 import 'src/providers/audio_provider.dart';
+import 'src/providers/auth_provider.dart';
 import 'src/providers/theme_provider.dart';
 
 void main() async {
@@ -96,9 +98,19 @@ class _KikoeruAppState extends ConsumerState<KikoeruApp> {
           theme: AppTheme.lightTheme(lightScheme),
           darkTheme: AppTheme.darkTheme(darkScheme),
           themeMode: mode,
-          home: const LauncherScreen(),
+          home: _buildHomeScreen(),
         );
       },
     );
+  }
+
+  Widget _buildHomeScreen() {
+    final authState = ref.watch(authProvider);
+
+    if (authState.currentUser != null && authState.isLoggedIn) {
+      return const MainScreen();
+    } else {
+      return const LoginScreen();
+    }
   }
 }
