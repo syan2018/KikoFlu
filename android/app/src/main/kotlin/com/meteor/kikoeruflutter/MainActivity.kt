@@ -1,4 +1,4 @@
-package com.example.kikoeru_flutter
+package com.meteor.kikoeruflutter
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine

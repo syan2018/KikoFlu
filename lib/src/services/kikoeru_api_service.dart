@@ -6,7 +6,7 @@ import '../models/work.dart';
 import 'cache_service.dart';
 
 class KikoeruApiService {
-  static const String remoteHost = 'https://api.asmr-200.com'; //api.asmr.one
+  static const String remoteHost = 'https://api.asmr-200.com';
   static const String localHost = 'localhost:8888';
 
   late Dio _dio;

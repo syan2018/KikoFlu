@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,30 +18,66 @@ class LoginScreen extends ConsumerStatefulWidget {
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
+enum _LatencyState { idle, testing, success, failure }
+
+class _LatencyResult {
+  const _LatencyResult(
+    this.state, {
+    this.latencyMs,
+    this.statusCode,
+    this.error,
+  });
+
+  final _LatencyState state;
+  final int? latencyMs;
+  final int? statusCode;
+  final String? error;
+}
+
+String _normalizedHostString(String host) {
+  var value = host.trim();
+  if (value.isEmpty) {
+    return '';
+  }
+
+  if (value.startsWith('http://')) {
+    value = value.substring(7);
+  } else if (value.startsWith('https://')) {
+    value = value.substring(8);
+  }
+
+  while (value.endsWith('/')) {
+    value = value.substring(0, value.length - 1);
+  }
+
+  return value;
+}
+
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _hostController = TextEditingController();
 
   bool _isLogin = true; // true for login, false for register
   bool _obscurePassword = true;
   bool _isLoading = false;
+  late final List<String> _hostOptions;
+  String _hostValue = '';
+  final Map<String, _LatencyResult> _latencyResults = {};
 
   @override
   void initState() {
     super.initState();
-    // Set default remote host
-    _hostController.text = KikoeruApiService.remoteHost
-        .replaceAll('https://', '')
-        .replaceAll('http://', '');
+    _initializeHostOptions();
+
+    final defaultHost = _normalizedHostString(KikoeruApiService.remoteHost);
+    _hostValue = defaultHost;
   }
 
   @override
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
-    _hostController.dispose();
     super.dispose();
   }
 
@@ -53,7 +90,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     final username = _usernameController.text.trim();
     final password = _passwordController.text;
-    final host = _hostController.text.trim();
+    final host = _hostValue.trim();
 
     try {
       bool success;
@@ -109,6 +146,209 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _isLogin = !_isLogin;
     });
     ref.read(authProvider.notifier).clearError();
+  }
+
+  void _initializeHostOptions() {
+    final options = <String>[];
+
+    void addOption(String host) {
+      final normalized = _normalizedHostString(host);
+      if (normalized.isEmpty) {
+        return;
+      }
+      if (!options.contains(normalized)) {
+        options.add(normalized);
+      }
+    }
+
+    const preferredHosts = [
+      'api.asmr-200.com',
+      'api.asmr.one',
+      'api.asmr-100.com',
+      'api.asmr-300.com',
+    ];
+
+    for (final host in preferredHosts) {
+      addOption(host);
+    }
+
+    final defaultHost = _normalizedHostString(KikoeruApiService.remoteHost);
+    if (defaultHost.isNotEmpty) {
+      options.remove(defaultHost);
+      options.insert(0, defaultHost);
+    }
+
+    _hostOptions = options;
+  }
+
+  Widget _buildHostLatencyActions(BuildContext context) {
+    final normalized = _normalizedHostString(_hostValue);
+    final result = normalized.isEmpty ? null : _latencyResults[normalized];
+    final isTesting = result?.state == _LatencyState.testing;
+    final statusText = normalized.isEmpty
+        ? '请输入服务器地址后测试连接'
+        : _describeLatencyResult(result, includePlaceholder: true);
+    final color = normalized.isEmpty
+        ? Theme.of(context).colorScheme.onSurfaceVariant
+        : _latencyColorForResult(context, result);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        TextButton.icon(
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            minimumSize: const Size(0, 36),
+          ),
+          onPressed: normalized.isEmpty || isTesting
+              ? null
+              : () => _testLatencyForHost(_hostValue),
+          icon: isTesting
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.network_ping_outlined),
+          label: Text(isTesting ? '测试中...' : '测试连接'),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          statusText,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+          textAlign: TextAlign.right,
+        ),
+      ],
+    );
+  }
+
+  Future<void> _testLatencyForHost(String host) async {
+    final normalized = _normalizedHostString(host);
+    if (normalized.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      _latencyResults[normalized] = const _LatencyResult(_LatencyState.testing);
+    });
+
+    final stopwatch = Stopwatch()..start();
+
+    try {
+      final dio = Dio(
+        BaseOptions(
+          connectTimeout: const Duration(seconds: 5),
+          receiveTimeout: const Duration(seconds: 5),
+          sendTimeout: const Duration(seconds: 5),
+        ),
+      );
+
+      final trimmedHost = host.trim();
+      final baseUrl = (trimmedHost.startsWith('http://') ||
+              trimmedHost.startsWith('https://'))
+          ? trimmedHost
+          : 'https://$normalized';
+
+      final response = await dio.get(
+        '$baseUrl/api/health',
+        options: Options(
+          validateStatus: (status) => status != null && status < 500,
+        ),
+      );
+
+      stopwatch.stop();
+
+      if (!mounted) {
+        return;
+      }
+
+      final statusCode = response.statusCode;
+      final latency = stopwatch.elapsedMilliseconds;
+      final success =
+          statusCode != null && statusCode >= 200 && statusCode < 300;
+
+      setState(() {
+        _latencyResults[normalized] = _LatencyResult(
+          success ? _LatencyState.success : _LatencyState.failure,
+          latencyMs: latency,
+          statusCode: statusCode,
+          error: success ? null : 'HTTP ${statusCode ?? '-'}',
+        );
+      });
+    } catch (e) {
+      stopwatch.stop();
+
+      if (!mounted) {
+        return;
+      }
+
+      final statusCode = e is DioException ? e.response?.statusCode : null;
+      final message = e is DioException
+          ? (e.message ?? e.error?.toString() ?? '未知错误')
+          : e.toString();
+
+      setState(() {
+        _latencyResults[normalized] = _LatencyResult(
+          _LatencyState.failure,
+          statusCode: statusCode,
+          error: _shortenMessage(message),
+        );
+      });
+    }
+  }
+
+  String _describeLatencyResult(_LatencyResult? result,
+      {bool includePlaceholder = false}) {
+    if (result == null) {
+      return includePlaceholder ? '尚未测试' : '';
+    }
+
+    switch (result.state) {
+      case _LatencyState.idle:
+        return includePlaceholder ? '尚未测试' : '';
+      case _LatencyState.testing:
+        return '测试中...';
+      case _LatencyState.success:
+        final latency = result.latencyMs;
+        final statusCode = result.statusCode;
+        final latencyText = latency != null ? '$latency ms' : '- ms';
+        final statusText = statusCode != null ? 'HTTP $statusCode' : 'HTTP -';
+        return '延迟 $latencyText ($statusText)';
+      case _LatencyState.failure:
+        final statusCode = result.statusCode;
+        final error = result.error;
+        final statusSuffix = statusCode != null ? ' (HTTP $statusCode)' : '';
+        if (error != null && error.isNotEmpty) {
+          return '连接失败: ${_shortenMessage(error)}';
+        }
+        return '连接失败$statusSuffix';
+    }
+  }
+
+  Color _latencyColorForResult(BuildContext context, _LatencyResult? result) {
+    final scheme = Theme.of(context).colorScheme;
+
+    if (result == null || result.state == _LatencyState.idle) {
+      return scheme.onSurfaceVariant;
+    }
+
+    switch (result.state) {
+      case _LatencyState.idle:
+        return scheme.onSurfaceVariant;
+      case _LatencyState.testing:
+        return scheme.primary;
+      case _LatencyState.success:
+        return scheme.secondary;
+      case _LatencyState.failure:
+        return scheme.error;
+    }
+  }
+
+  String _shortenMessage(String message, {int maxLength = 60}) {
+    if (message.length <= maxLength) {
+      return message;
+    }
+    return '${message.substring(0, maxLength)}...';
   }
 
   @override
@@ -213,25 +453,58 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 ),
 
                 const SizedBox(height: 16),
-
-                // Host field
-                TextFormField(
-                  controller: _hostController,
-                  decoration: const InputDecoration(
-                    labelText: '服务器地址',
-                    prefixIcon: Icon(Icons.dns),
-                    border: OutlineInputBorder(),
-                    helperText: '例如: localhost:8888 或 api.example.com',
-                  ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return '请输入服务器地址';
+                // Host field with dropdown/autocomplete
+                Autocomplete<String>(
+                  initialValue: TextEditingValue(text: _hostValue),
+                  optionsBuilder: (textEditingValue) {
+                    final query = textEditingValue.text.trim().toLowerCase();
+                    if (query.isEmpty) {
+                      return _hostOptions;
                     }
-                    return null;
+                    return _hostOptions.where(
+                      (option) => option.toLowerCase().contains(query),
+                    );
                   },
-                  textInputAction: TextInputAction.done,
-                  onFieldSubmitted: (_) => _submit(),
+                  fieldViewBuilder: (
+                    context,
+                    textEditingController,
+                    focusNode,
+                    onFieldSubmitted,
+                  ) {
+                    return TextFormField(
+                      controller: textEditingController,
+                      focusNode: focusNode,
+                      decoration: const InputDecoration(
+                        labelText: '服务器地址',
+                        prefixIcon: Icon(Icons.dns),
+                        border: OutlineInputBorder(),
+                        helperText: '支持自定义，如: localhost:8888 或 api.example.com',
+                      ),
+                      keyboardType: TextInputType.url,
+                      onChanged: (value) {
+                        setState(() {
+                          _hostValue = value;
+                        });
+                      },
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return '请输入服务器地址';
+                        }
+                        return null;
+                      },
+                      textInputAction: TextInputAction.done,
+                      onFieldSubmitted: (_) => _submit(),
+                    );
+                  },
+                  onSelected: (selection) {
+                    setState(() {
+                      _hostValue = selection;
+                    });
+                  },
                 ),
+
+                const SizedBox(height: 8),
+                _buildHostLatencyActions(context),
 
                 const SizedBox(height: 32),
 
