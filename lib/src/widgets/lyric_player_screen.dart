@@ -92,10 +92,52 @@ class _LyricPlayerScreenState extends ConsumerState<LyricPlayerScreen> {
               duration: const Duration(milliseconds: 150),
               curve: Curves.easeOut,
             );
+          } else if (mounted) {
+            _nudgeAndRetry(index);
           }
         });
       });
     }
+  }
+
+  // 如果估算位置偏差过大，尝试向上/下轻推一个屏幕高度再检测
+  Future<void> _nudgeAndRetry(int index) async {
+    if (!_scrollController.hasClients) return;
+
+    final key = _getKeyForIndex(index);
+    if (key.currentContext != null) {
+      return; // 已经渲染到视图中，无需处理
+    }
+
+    final viewport = _scrollController.position.viewportDimension;
+    final currentOffset = _scrollController.position.pixels;
+    final maxOffset = _scrollController.position.maxScrollExtent;
+
+    Future<void> tryOffset(double offset) async {
+      final target = (currentOffset + offset).clamp(0.0, maxOffset);
+      await _scrollController.animateTo(
+        target,
+        duration: const Duration(milliseconds: 160),
+        curve: Curves.easeOut,
+      );
+      // 等待一帧，让懒加载有机会触发
+      await Future.delayed(const Duration(milliseconds: 16));
+      if (key.currentContext != null && mounted) {
+        Scrollable.ensureVisible(
+          key.currentContext!,
+          alignment: 0.5,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+        );
+      }
+    }
+
+    // 先尝试向下轻推
+    await tryOffset(viewport * 0.8);
+    if (key.currentContext != null) return;
+
+    // 再尝试向上轻推
+    await tryOffset(-viewport * 0.8);
   }
 
   // 计算并滚动到大致位置（用于触发懒加载）
